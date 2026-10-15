@@ -233,7 +233,11 @@ export function Portal({
           action: 'attendance_heartbeat',
           payload: { device_id: deviceId(), device_label: deviceLabel() },
         }),
-      }).catch(() => undefined);
+      })
+        .then((res) => {
+          if (res.status === 401) router.replace('/login?reason=another-device');
+        })
+        .catch(() => undefined);
     const wake = () => {
       if (document.visibilityState === 'visible') beat();
     };
@@ -244,7 +248,7 @@ export function Portal({
       clearInterval(timer);
       document.removeEventListener('visibilitychange', wake);
     };
-  }, [openAttendance]);
+  }, [openAttendance, router]);
   useEffect(() => {
     if (section !== 'attendance' || preview) return;
     const timer = setInterval(() => router.refresh(), 120000);
@@ -280,6 +284,12 @@ export function Portal({
       : Date.now() - Date.parse(text(a, 'last_seen_at') || text(a, 'check_in')) < AWAY_AFTER_MS
         ? 'Active now'
         : 'Away / offline';
+  const presenceClass: Record<string, string> = {
+    'Active now': 'approved',
+    'Away / offline': 'submitted',
+    'Checked out': 'draft',
+  };
+  const todayRows = data.attendance.filter((a) => text(a, 'day') === colomboDay);
   const workedByEmployee = [...new Set(data.attendance.map((a) => text(a, 'employee_id')))].map(
     (id) => {
       const rows = data.attendance.filter((a) => text(a, 'employee_id') === id);
@@ -339,6 +349,7 @@ export function Portal({
         body: JSON.stringify({ action, payload, id: row?.id, version: row?.version }),
       });
       const result = await res.json();
+      if (res.status === 401) router.replace('/login?reason=another-device');
       if (!res.ok) throw new Error(result.error);
       inform('Saved successfully. Your workspace is up to date.');
       router.refresh();
@@ -1178,8 +1189,16 @@ export function Portal({
                   </span>
                   <div>
                     <p>Attendance today</p>
-                    <strong>9:00 AM – 5:00 PM</strong>
-                    <small>Asia/Colombo · schedule window</small>
+                    <strong>
+                      {todayRecord
+                        ? formatDuration(num(todayRecord, 'active_seconds')) + ' worked'
+                        : 'Not checked in'}
+                    </strong>
+                    <small>
+                      {todayRecord
+                        ? `Checked in ${clock(text(todayRecord, 'check_in'))} · Asia/Colombo`
+                        : 'Check in to start tracking your time'}
+                    </small>
                   </div>
                   <div className="attendance-action">
                     <Badge
@@ -1883,6 +1902,38 @@ export function Portal({
               </div>
               {canSeeTeam && (
                 <>
+                  <div className="team-stats">
+                    <Stat
+                      icon={Users}
+                      title="Active now"
+                      value={todayRows.filter((a) => presence(a) === 'Active now').length}
+                      color="green"
+                      detail="working right now"
+                    />
+                    <Stat
+                      icon={Clock}
+                      title="Away"
+                      value={todayRows.filter((a) => presence(a) === 'Away / offline').length}
+                      color="purple"
+                      detail="asleep or offline"
+                    />
+                    <Stat
+                      icon={LogOut}
+                      title="Checked out"
+                      value={todayRows.filter((a) => a.check_out).length}
+                      color="blue"
+                      detail="finished today"
+                    />
+                    <Stat
+                      icon={CalendarDays}
+                      title="Worked today"
+                      value={formatDuration(
+                        todayRows.reduce((n, a) => n + num(a, 'active_seconds'), 0),
+                      )}
+                      color="green"
+                      detail="across the team"
+                    />
+                  </div>
                   <Panel className="operational-panel" title="Team attendance">
                     <div className="table-scroll">
                       <table>
@@ -1907,7 +1958,11 @@ export function Portal({
                               <td>{a.check_out ? clock(text(a, 'check_out')) : '—'}</td>
                               <td>{formatDuration(num(a, 'active_seconds'))}</td>
                               <td>{formatDuration(awaySeconds(a))}</td>
-                              <td suppressHydrationWarning>{presence(a)}</td>
+                              <td suppressHydrationWarning>
+                                <span className={`badge ${presenceClass[presence(a)]}`}>
+                                  {presence(a)}
+                                </span>
+                              </td>
                               <td>{deviceNames(a.id)}</td>
                             </tr>
                           ))}
@@ -2247,35 +2302,37 @@ export function Portal({
               <LeaveTable />
             </Panel>
           )}
-          {section === 'my-work' && (
-            <Panel
-              className="operational-panel"
-              title="My expense & reimbursement requests"
-              action={
-                <button className="button yellow small-button" onClick={() => open('expense')}>
-                  <Plus size={14} />
-                  New request
-                </button>
-              }
-            >
-              <div className="review-queue">
-                {data.expenses
-                  .filter((e) => preview || text(e, 'submitted_by') === user.id)
-                  .map((e) => (
-                    <div key={e.id}>
-                      <span>
-                        <strong>{text(e, 'purpose')}</strong>
-                        <small>
-                          {money(num(e, 'amount'))} · {label(text(e, 'execution_status'))}
-                        </small>
-                      </span>
-                      <Badge value={text(e, 'approval_status')} />
-                    </div>
-                  ))}
-              </div>
-            </Panel>
-          )}
-          <OperationalTools />
+          <div className={section === 'my-work' ? 'two-up' : 'plain-wrap'}>
+            {section === 'my-work' && (
+              <Panel
+                className="operational-panel"
+                title="My expense & reimbursement requests"
+                action={
+                  <button className="button yellow small-button" onClick={() => open('expense')}>
+                    <Plus size={14} />
+                    New request
+                  </button>
+                }
+              >
+                <div className="review-queue">
+                  {data.expenses
+                    .filter((e) => preview || text(e, 'submitted_by') === user.id)
+                    .map((e) => (
+                      <div key={e.id}>
+                        <span>
+                          <strong>{text(e, 'purpose')}</strong>
+                          <small>
+                            {money(num(e, 'amount'))} · {label(text(e, 'execution_status'))}
+                          </small>
+                        </span>
+                        <Badge value={text(e, 'approval_status')} />
+                      </div>
+                    ))}
+                </div>
+              </Panel>
+            )}
+            <OperationalTools />
+          </div>
           <footer className="page-footer">
             <span>© {new Date().getFullYear()} RepairMe. Built for the way we work.</span>
             <span>

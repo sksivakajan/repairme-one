@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { TRUST_COOKIE, hashToken, newTrustToken, trustCookieOptions } from '@/lib/supabase/session';
 export async function POST(req: NextRequest) {
   if (
     !process.env.APP_ORIGIN ||
@@ -18,6 +19,8 @@ export async function POST(req: NextRequest) {
         .string()
         .regex(/^\d{6}$/)
         .optional(),
+      remember: z.boolean().optional(),
+      deviceLabel: z.string().max(80).optional(),
     })
     .safeParse(await req.json());
   if (!parsed.success)
@@ -50,7 +53,15 @@ export async function POST(req: NextRequest) {
     factorId: parsed.data.factorId,
     code: parsed.data.code,
   });
-  return error
-    ? NextResponse.json({ error: 'Unable to verify code' }, { status: 400 })
-    : NextResponse.json({ success: true });
+  if (error) return NextResponse.json({ error: 'Unable to verify code' }, { status: 400 });
+  const response = NextResponse.json({ success: true });
+  if (parsed.data.remember) {
+    const token = newTrustToken();
+    const { error: trustError } = await db.rpc('trust_this_device', {
+      token_hash: hashToken(token),
+      device_label: parsed.data.deviceLabel ?? 'Trusted device',
+    });
+    if (!trustError) response.cookies.set(TRUST_COOKIE, token, trustCookieOptions);
+  }
+  return response;
 }

@@ -18,7 +18,25 @@ export async function proxy(request: NextRequest) {
       },
     },
   );
-  await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
+  const path = request.nextUrl.pathname;
+  const sessionExempt = ['/auth/', '/login', '/recovery'].some((p) => path.startsWith(p));
+  if (data?.claims?.sub && !sessionExempt) {
+    // Another sign-in replaced this session: clear the cookies and send the user to sign in again.
+    const { data: current } = await supabase.rpc('session_is_current');
+    if (current === false) {
+      await supabase.auth.signOut({ scope: 'local' });
+      const ended = path.startsWith('/api/')
+        ? NextResponse.json(
+            { error: 'You were signed out because this account signed in on another device.' },
+            { status: 401 },
+          )
+        : NextResponse.redirect(new URL('/login?reason=another-device', request.url));
+      response.cookies.getAll().forEach((c) => ended.cookies.set(c));
+      ended.headers.set('Cache-Control', 'private, no-store');
+      return ended;
+    }
+  }
   response.headers.set('Cache-Control', 'private, no-store');
   return response;
 }

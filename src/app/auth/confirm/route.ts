@@ -8,7 +8,10 @@ export async function GET(req: NextRequest) {
   if (hash && type && ['invite', 'recovery', 'email_change'].includes(type)) {
     const db = await serverClient();
     const { error } = await db.auth.verifyOtp({ token_hash: hash, type: type as EmailOtpType });
-    if (!error) return NextResponse.redirect(new URL('/account', origin));
+    if (!error) {
+      await db.rpc('claim_session', { trusted_hash: null });
+      return NextResponse.redirect(new URL('/account', origin));
+    }
   }
   return NextResponse.redirect(new URL('/recovery?error=invalid_link', origin));
 }

@@ -13,7 +13,11 @@ test('login validates required fields and links to recovery', async ({ page }) =
   await expect(page.getByLabel('Work email')).toHaveAttribute('type', 'email');
   await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute('type', 'password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  expect(await page.getByLabel('Work email').evaluate((el: HTMLInputElement) => el.validity.valueMissing)).toBe(true);
+  expect(
+    await page
+      .getByLabel('Work email')
+      .evaluate((el: HTMLInputElement) => el.validity.valueMissing),
+  ).toBe(true);
   await expect(page).toHaveURL(/\/login$/);
   await page.getByRole('link', { name: 'Forgot password?' }).click();
   await expect(page).toHaveURL(/\/recovery$/);
@@ -22,7 +26,9 @@ test('login validates required fields and links to recovery', async ({ page }) =
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test('session and command endpoints reject requests from an untrusted origin', async ({ request }) => {
+test('session and command endpoints reject requests from an untrusted origin', async ({
+  request,
+}) => {
   for (const route of ['/auth/session', '/api/commands']) {
     const response = await request.post(route, {
       headers: { origin: 'https://untrusted.invalid' },

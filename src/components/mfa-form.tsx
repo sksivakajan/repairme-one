@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { deviceLabel } from '@/lib/attendance';
 export function MfaForm({ next = '/dashboard' }: { next?: '/account' | '/dashboard' }) {
   const router = useRouter();
   const [factor, setFactor] = useState('');
@@ -8,6 +9,7 @@ export function MfaForm({ next = '/dashboard' }: { next?: '/account' | '/dashboa
   const [qrCode, setQrCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true);
   return (
     <div className="setup-page">
       <h1>Protect your workspace</h1>
@@ -85,6 +87,8 @@ export function MfaForm({ next = '/dashboard' }: { next?: '/account' | '/dashboa
                   action: 'verify',
                   factorId: factor,
                   code: new FormData(ev.currentTarget).get('code'),
+                  remember,
+                  deviceLabel: deviceLabel(),
                 }),
               });
               const result = await res.json();
@@ -111,6 +115,17 @@ export function MfaForm({ next = '/dashboard' }: { next?: '/account' | '/dashboa
               required
               autoComplete="one-time-code"
             />
+          </label>
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(ev) => setRemember(ev.target.checked)}
+            />
+            <span>
+              Remember this device for 30 days
+              <small>You won’t be asked for a code when you sign in here again.</small>
+            </span>
           </label>
           <button disabled={busy} className="button yellow">
             Verify
