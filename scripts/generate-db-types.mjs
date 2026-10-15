@@ -36,22 +36,24 @@ for (const [name, columns] of tables) {
   }
   out += '    Relationships: [];\n  };\n';
 }
-const functionQuery = `select json_agg(json_build_object('name',p.proname,'names',p.proargnames,'types',array(select format_type(t,null) from unnest(p.proargtypes::oid[])t),'defaults',p.pronargdefaults,'returns',format_type(p.prorettype,null))) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('command','agent_pair','agent_heartbeat','claim_session','trust_this_device','revoke_trusted_devices','session_is_current','mfa_satisfied','provision_employee','prepare_document','finish_document')`;
+const functionQuery = `select json_agg(json_build_object('name',p.proname,'names',p.proargnames,'types',array(select format_type(t,null) from unnest(p.proargtypes::oid[])t),'defaults',p.pronargdefaults,'returns',format_type(p.prorettype,null))) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('command','leader_candidates','agent_pair','agent_heartbeat','claim_session','trust_this_device','revoke_trusted_devices','session_is_current','mfa_satisfied','provision_employee','prepare_document','finish_document')`;
 const functions = JSON.parse(
   execFileSync('psql', ['-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', functionQuery], {
     encoding: 'utf8',
   }),
 );
 const rpcType = (t) =>
-  ['json', 'jsonb'].includes(t)
-    ? 'Json'
-    : t === 'boolean'
-      ? 'boolean'
-      : ['integer', 'bigint', 'numeric'].includes(t)
-        ? 'number'
-        : t === 'void'
-          ? 'undefined'
-          : 'string';
+  t === 'record'
+    ? '{ id: string }[]'
+    : ['json', 'jsonb'].includes(t)
+      ? 'Json'
+      : t === 'boolean'
+        ? 'boolean'
+        : ['integer', 'bigint', 'numeric'].includes(t)
+          ? 'number'
+          : t === 'void'
+            ? 'undefined'
+            : 'string';
 out += '}; Views: { [_ in never]: never }; Functions: {\n';
 for (const f of functions) {
   const names = f.names ?? [];
@@ -62,7 +64,9 @@ for (const f of functions) {
     })
     .join('');
   const argType = names.length ? `{${args} }` : 'Record<PropertyKey, never>';
-  out += `${f.name}: { Args: ${argType}; Returns: ${rpcType(f.returns)} };\n`;
+  // A set-returning function with one output column reports a scalar type; its rows are { id } objects.
+  const returns = f.name === 'leader_candidates' ? '{ id: string }[]' : rpcType(f.returns);
+  out += `${f.name}: { Args: ${argType}; Returns: ${returns} };\n`;
 }
 out +=
   "}; Enums: { app_role: 'ceo' | 'admin' | 'hr' | 'finance' | 'manager' | 'employee' }; CompositeTypes: { [_ in never]: never } } };\n";

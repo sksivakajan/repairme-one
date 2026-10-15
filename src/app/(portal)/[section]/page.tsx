@@ -66,6 +66,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
           : undefined,
       }
     : undefined;
+  const leaderRows = section === 'projects' ? ((await db.rpc('leader_candidates')).data ?? []) : [];
   const [
     employees,
     projects,
@@ -216,6 +217,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         agentDevices: agentDevices.data ?? [],
         agentStatus: agentStatus.data ?? [],
         projectMembers: projectMembers.data ?? [],
+        leaders: leaderRows.map((r) => ({ id: String(r.id) })),
         notifications: notifications.data ?? [],
         settings: settings.data ?? [],
         income: income.data ?? [],

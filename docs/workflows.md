@@ -68,3 +68,8 @@ All multi-record commands execute within one PostgreSQL transaction; row/advisor
 - **Check-in** can be repeated on the same day: it resumes today's record.
 - **Projects.** Only the leader who created a project can create tasks in it. The project overview shows the leader, who created it, dates, task and member counts, each person's tasks, and a numbered task list with who created each task.
 - **Task flow.** Created → Awaiting acceptance → the assignee accepts and starts work → In Progress → the assignee submits a report or evidence → In Review → the independent reviewer approves and closes it (Closed) or sends it back. A task past its due date that is not closed moves to the Overdue column until it is closed or cancelled.
+
+## Project leader and task visibility
+
+- When a project is created, the creator chooses its leader from the active managers. The leader owns the project from then on: creates its tasks, assigns people and reviews the work. The leader is notified.
+- The project leader (and the CEO) see every task in the project. Every other member sees only the tasks assigned to them, so one member cannot see another member's task. Task history, comments and developer details follow the same rule. Members still see the project they work on and its people.

@@ -11,6 +11,7 @@ export type PortalData = Record<
   | 'agentDevices'
   | 'agentStatus'
   | 'projectMembers'
+  | 'leaders'
   | 'notifications'
   | 'settings'
   | 'income'
@@ -404,6 +405,7 @@ export const fixtures: PortalData = {
       last_seen_at: '2026-10-13T11:29:00Z',
     },
   ],
+  leaders: [{ id: '4' }, { id: '6' }],
   projectMembers: [
     { id: 'p1:4', project_id: 'p1', employee_id: '4' },
     { id: 'p1:6', project_id: 'p1', employee_id: '6' },

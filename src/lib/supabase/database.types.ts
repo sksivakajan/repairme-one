@@ -1673,6 +1673,8 @@ export type Database = { public: { Tables: {
 provision_employee: { Args: {user_id: string;email: string;first_name: string;last_name: string;employee_number: string;department: string;job_title: string; }; Returns: string };
 session_is_current: { Args: Record<PropertyKey, never>; Returns: boolean };
 mfa_satisfied: { Args: Record<PropertyKey, never>; Returns: boolean };
+leader_candidates: { Args: {id: string; }; Returns: { id: string }[] };
+command: { Args: {action: string;record_id?: string | null;expected_version?: number | null;payload?: Json | null; }; Returns: Json };
 prepare_document: { Args: {file_name: string;file_type: string;file_size: number;classification: string;project_id?: string | null; }; Returns: Json };
 finish_document: { Args: {document_id: string; }; Returns: undefined };
 trust_this_device: { Args: {token_hash: string;device_label?: string | null; }; Returns: undefined };
@@ -1680,5 +1682,4 @@ claim_session: { Args: {trusted_hash?: string | null; }; Returns: undefined };
 revoke_trusted_devices: { Args: Record<PropertyKey, never>; Returns: undefined };
 agent_heartbeat: { Args: {token: string;payload: Json; }; Returns: Json };
 agent_pair: { Args: {code: string;device_name: string;os?: string | null;agent_version?: string | null; }; Returns: Json };
-command: { Args: {action: string;record_id?: string | null;expected_version?: number | null;payload?: Json | null; }; Returns: Json };
 }; Enums: { app_role: 'ceo' | 'admin' | 'hr' | 'finance' | 'manager' | 'employee' }; CompositeTypes: { [_ in never]: never } } };

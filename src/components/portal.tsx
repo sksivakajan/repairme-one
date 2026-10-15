@@ -3165,6 +3165,26 @@ export function Portal({
       return (
         <Form action="create_project" submit="Create project">
           <Field name="name" title="Project name" />
+          <label className="field">
+            Project leader
+            <select
+              name="leader_id"
+              required
+              defaultValue={data.leaders.some((l) => l.id === user.id) ? user.id : ''}
+            >
+              <option value="" disabled>
+                Choose the leader…
+              </option>
+              {data.leaders.map((l) => (
+                <option value={l.id} key={l.id}>
+                  {employeeName(l.id)}
+                </option>
+              ))}
+            </select>
+            <small>
+              The leader runs this project: creates its tasks, assigns people and reviews the work.
+            </small>
+          </label>
           <Field name="client" title="Client" required={false} />
           <Field name="description" title="Description" />
           <Field name="due_date" title="Due date" type="date" />
@@ -3201,7 +3221,7 @@ export function Portal({
                   </option>
                 ))}
             </select>
-            <small>Only a project’s leader (the person who created it) can add tasks to it.</small>
+            <small>Only a project’s leader can add tasks to it.</small>
           </label>
           <fieldset className="assignee-list">
             <legend>Assign to (choose one or more people)</legend>
@@ -3668,6 +3688,7 @@ export function Portal({
                 ...tasks.map((t) => text(t, 'assignee_id')).filter(Boolean),
               ]),
             ];
+            const seesAll = leader === user.id || user.roles.includes('ceo') || preview;
             const open = tasks.filter(
               (t) => !['completed', 'cancelled'].includes(text(t, 'status')),
             );
@@ -3729,7 +3750,13 @@ export function Portal({
                     );
                   })}
                 </div>
-                <h3 className="overview-heading">Tasks</h3>
+                <h3 className="overview-heading">{seesAll ? 'Tasks' : 'Your tasks'}</h3>
+                {!seesAll && (
+                  <p className="agent-note">
+                    You can see the tasks assigned to you in this project. The project leader sees
+                    every task.
+                  </p>
+                )}
                 <div className="table-scroll">
                   <table>
                     <thead>
