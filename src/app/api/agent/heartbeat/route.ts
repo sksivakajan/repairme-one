@@ -15,6 +15,11 @@ const schema = z.object({
   foreground_app: z.string().max(80).default(''),
   input_idle_seconds: number(31_536_000).default(0),
   agent_version: z.string().max(20).default(''),
+  // Work minutes the desktop app stored while it could not reach the portal.
+  backlog: z
+    .array(z.object({ minute: z.string().min(10).max(40), seconds: number(60) }))
+    .max(120)
+    .default([]),
   top_apps: z
     .array(
       z.object({

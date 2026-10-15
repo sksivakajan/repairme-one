@@ -3422,3 +3422,67 @@ tbody tr:hover {
 .dialog-content:has(.overview-heading) td:first-child {
   white-space: nowrap;
 }
+.watch-card.break .watch-dot {
+  background: #8b5cf6;
+}
+.break-card {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  display: flex;
+  gap: 14px;
+  max-width: 420px;
+  background: white;
+  border: 1px solid var(--line);
+  border-left: 4px solid #ffcc00;
+  border-radius: 10px;
+  padding: 16px 18px;
+  box-shadow: 0 12px 40px rgba(16, 24, 32, 0.22);
+}
+.break-card p {
+  font-size: 12px;
+  color: #6b7686;
+  margin: 4px 0 12px;
+}
+.break-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #101820;
+  color: white;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+.break-banner .button {
+  color: white;
+  border-color: #46566a;
+  background: transparent;
+}
+.break-clock {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  color: #ffcc00;
+}
+.break-allow {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 11px;
+  cursor: pointer;
+}

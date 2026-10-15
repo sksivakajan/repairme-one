@@ -84,3 +84,13 @@ test('a real report from the desktop agent passes the portal validation', async 
   const res = await heartbeat(post('/api/agent/heartbeat', sample, `Bearer ${token}`));
   expect(res.status).toBe(200);
 });
+test('offline work minutes are accepted and forwarded', async () => {
+  rpc.mockResolvedValue({ data: { ok: true, backlog_credited: 105 }, error: null });
+  const sample = JSON.parse(readFileSync('agent/tests/sample_report.json', 'utf8'));
+  const auth = `Bearer ${token}`;
+  const res = await heartbeat(post('/api/agent/heartbeat', sample, auth));
+  expect(res.status).toBe(200);
+  expect(rpc.mock.calls[0][1].payload.backlog).toEqual(sample.backlog);
+  const bad = { ...sample, backlog: [{ minute: '2026-10-15T08:00:00Z', seconds: 500 }] };
+  expect((await heartbeat(post('/api/agent/heartbeat', bad, auth))).status).toBe(422);
+});

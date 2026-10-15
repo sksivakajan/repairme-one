@@ -47,15 +47,19 @@ def _post(url: str, body: dict, token: str | None = None, timeout: int = 20) -> 
         raise ApiError(f'Cannot reach the portal: {getattr(error, "reason", error)}') from None
 
 
-def pair(server: str, code: str, device_name: str, os_name: str, version: str) -> str:
+def pair_full(server: str, code: str, device_name: str, os_name: str, version: str) -> dict:
+    """Exchange a one-time code for a token. Returns the token and the account it belongs to."""
     result = _post(
         normalize_server(server) + '/api/agent/pair',
         {'code': code.strip(), 'device_name': device_name, 'os': os_name, 'agent_version': version},
     )
-    token = result.get('token')
-    if not token:
+    if not result.get('token'):
         raise ApiError('The portal did not return a token')
-    return token
+    return result
+
+
+def pair(server: str, code: str, device_name: str, os_name: str, version: str) -> str:
+    return pair_full(server, code, device_name, os_name, version)['token']
 
 
 def heartbeat(server: str, token: str, report: dict) -> dict:

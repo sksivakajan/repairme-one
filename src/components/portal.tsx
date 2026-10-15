@@ -50,6 +50,8 @@ import type { PortalData, Row } from '@/features/fixtures';
 import { ticketFixtures } from '@/features/ticket-fixtures';
 import { AWAY_AFTER_MS, deviceId, deviceLabel, formatDuration } from '@/lib/attendance';
 import { DigitalWatch } from '@/components/digital-watch';
+import { WorkBreak } from '@/components/work-break';
+import { DesktopBridge } from '@/components/desktop-bridge';
 import { Ticketing, type TicketData } from '@/components/ticketing';
 import { workflowForms } from '@/features/workflow-forms';
 const nav: { slug: string; label: string; icon: LucideIcon }[] = [
@@ -314,11 +316,14 @@ export function Portal({
         ? 'Working'
         : text(s, 'state') === 'locked'
           ? 'PC locked'
-          : 'Idle';
+          : text(s, 'state') === 'break'
+            ? 'Coffee break'
+            : 'Idle';
   const agentClass: Record<string, string> = {
     Working: 'approved',
     Idle: 'submitted',
     'PC locked': 'submitted',
+    'Coffee break': 'in_progress',
     'Offline / asleep': 'draft',
   };
   async function createPairing() {
@@ -2027,13 +2032,19 @@ export function Portal({
                 className="operational-panel"
                 title="Desktop agent"
                 action={
-                  <button
-                    className="button yellow small-button"
-                    onClick={() => open('agent-connect')}
-                  >
-                    <Plus size={14} />
-                    Connect this PC
-                  </button>
+                  <>
+                    <Link className="button outline small-button" href="/install">
+                      <Download size={14} />
+                      Get the desktop app
+                    </Link>{' '}
+                    <button
+                      className="button yellow small-button"
+                      onClick={() => open('agent-connect')}
+                    >
+                      <Plus size={14} />
+                      Connect this PC
+                    </button>
+                  </>
                 }
               >
                 <p className="agent-note">
@@ -2557,6 +2568,8 @@ export function Portal({
           </footer>
         </main>
       </div>
+      <WorkBreak preview={preview} />
+      <DesktopBridge userId={user.id} preview={preview} />
       {notice && (
         <div className="toast" role="status">
           <CheckCircle2 size={19} />

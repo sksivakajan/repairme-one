@@ -26,11 +26,20 @@ export async function POST(request: NextRequest) {
       { error: 'Unable to connect this computer.' },
       { status: 502, headers },
     );
-  const result = data as { ok: boolean; token?: string; employee?: string; error?: string };
+  const result = data as {
+    ok: boolean;
+    token?: string;
+    employee?: string;
+    user_id?: string;
+    error?: string;
+  };
   if (!result.ok)
     return NextResponse.json(
       { error: result.error ?? 'Code is not valid.' },
       { status: 400, headers },
     );
-  return NextResponse.json({ token: result.token, employee: result.employee }, { headers });
+  return NextResponse.json(
+    { token: result.token, employee: result.employee, user_id: result.user_id },
+    { headers },
+  );
 }

@@ -2,11 +2,12 @@
 import { useEffect, useState } from 'react';
 import { Clock } from 'lucide-react';
 const FRESH_MS = 150000;
-type Mode = 'running' | 'idle' | 'locked' | 'offline';
+type Mode = 'running' | 'idle' | 'locked' | 'break' | 'offline';
 const labels: Record<Mode, string> = {
   running: 'Running',
   idle: 'Idle · not counted',
   locked: 'PC locked · not counted',
+  break: 'Coffee break · paused',
   offline: 'Not tracking',
 };
 function clock(total: number) {
@@ -30,10 +31,23 @@ export function DigitalWatch({
 }) {
   const [tick, setTick] = useState(0);
   const [mode, setMode] = useState<Mode>('offline');
+  const [onBreak, setOnBreak] = useState(false);
+  useEffect(() => {
+    const listen = (event: Event) => setOnBreak(Boolean((event as CustomEvent).detail?.on_break));
+    window.addEventListener('repairme:work-status', listen);
+    return () => window.removeEventListener('repairme:work-status', listen);
+  }, []);
   useEffect(() => {
     const evaluate = (): Mode => {
+      if (onBreak) return 'break';
       if (agentUpdatedAt && Date.now() - Date.parse(agentUpdatedAt) < FRESH_MS)
-        return agentState === 'active' ? 'running' : agentState === 'locked' ? 'locked' : 'idle';
+        return agentState === 'active'
+          ? 'running'
+          : agentState === 'locked'
+            ? 'locked'
+            : agentState === 'break'
+              ? 'break'
+              : 'idle';
       return checkedIn && document.visibilityState === 'visible' ? 'running' : 'offline';
     };
     const id = setInterval(() => {
@@ -42,7 +56,7 @@ export function DigitalWatch({
       if (next === 'running') setTick((t) => t + 1);
     }, 1000);
     return () => clearInterval(id);
-  }, [agentState, agentUpdatedAt, checkedIn]);
+  }, [agentState, agentUpdatedAt, checkedIn, onBreak]);
   return (
     <div className={`watch-card ${mode}`} role="timer" aria-label="Tracked work time today">
       <span className="stat-icon green">

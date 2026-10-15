@@ -58,11 +58,11 @@ def unprotect(data: bytes) -> bytes:
         ctypes.windll.kernel32.LocalFree(out.pbData)
 
 
-def save(server: str, token: str, path: Path | None = None) -> None:
+def save(server: str, token: str, path: Path | None = None, **extra: str) -> None:
     path = path or config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     encoded = base64.b64encode(protect(token.encode())).decode()
-    path.write_text(json.dumps({'server': server, 'token': encoded}))
+    path.write_text(json.dumps({'server': server, 'token': encoded, **extra}))
     if not IS_WINDOWS:
         path.chmod(0o600)
 
@@ -72,6 +72,18 @@ def load(path: Path | None = None) -> tuple[str, str] | None:
     try:
         raw = json.loads(path.read_text())
         return raw['server'], unprotect(base64.b64decode(raw['token'])).decode()
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def load_config(path: Path | None = None) -> dict | None:
+    """Everything saved: server, token and the account the computer was connected for."""
+    path = path or config_path()
+    try:
+        raw = json.loads(path.read_text())
+        raw['token'] = unprotect(base64.b64decode(raw['token'])).decode()
+        raw['server']
+        return raw
     except (OSError, ValueError, KeyError):
         return None
 

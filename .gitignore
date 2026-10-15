@@ -22,3 +22,6 @@ agent/dist/
 agent/*.spec
 __pycache__/
 *.pyc
+
+# Built installers are large; copy RepairMeSetup.exe here only when deploying
+public/downloads/*.exe

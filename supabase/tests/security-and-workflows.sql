@@ -297,4 +297,49 @@ select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000006'
 select set_config('request.jwt.claims','{"aal":"aal2"}',true);
 select test.assert((select count(*)=0 from public.tasks where title='Visibility task') and (select count(*)=0 from public.projects where name='CEO assigned'),'Someone outside the project sees neither project nor tasks');
 reset role;
+-- Coffee breaks, continuous-work streak, and offline sync.
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
+select set_config('request.jwt.claims','{"aal":"aal1"}',true);
+create temp table t_code2 as select public.command('create_agent_pairing')->>'code' as code;
+create temp table t_pair2 as select public.agent_pair((select code from t_code2),'Break PC','Windows 11','1.0') as r;
+select test.assert((select (r->>'user_id')::uuid='00000000-0000-0000-0000-000000000007' from t_pair2),'Pairing returns the account id');
+create temp table t_dev2 as select id from public.agent_devices where device_name='Break PC';
+delete from public.work_streaks where user_id='00000000-0000-0000-0000-000000000007';
+insert into public.work_streaks(user_id,streak_seconds,last_active_at) values('00000000-0000-0000-0000-000000000007',3590,now()-interval '30 seconds');
+update public.agent_devices set last_seen_at=now()-interval '30 seconds' where id=(select id from t_dev2);
+select test.assert((public.agent_heartbeat((select r->>'token' from t_pair2),'{"state":"active","active_seconds":30}')->'work'->>'break_due')::boolean,'After 60 minutes of continuous work a break is offered');
+select public.command('snooze_break');
+select test.assert(not (public.work_status()->>'break_due')::boolean and (public.work_status()->>'snoozed_until') is not null,'Pushing the break back hides the offer for 10 minutes');
+update public.work_streaks set snoozed_until=now()-interval '1 second' where user_id='00000000-0000-0000-0000-000000000007';
+select test.assert((public.work_status()->>'break_due')::boolean,'The offer returns when the 10 minutes are over');
+select public.command('start_break');
+select test.assert((public.work_status()->>'on_break')::boolean and (public.work_status()->>'break_seconds_left')::integer between 590 and 600,'Starting a break begins a 10 minute countdown');
+select test.reject($$select public.command('start_break')$$,'already on a break','A second break cannot be started');
+create temp table t_att as select active_seconds as n from public.attendance where employee_id='00000000-0000-0000-0000-000000000007';
+update public.agent_devices set last_seen_at=now()-interval '30 seconds' where id=(select id from t_dev2);
+select test.assert((public.agent_heartbeat((select r->>'token' from t_pair2),'{"state":"active","active_seconds":30}')->>'credited')::integer=0,'Nothing is credited during a break');
+select test.assert((select state='break' from public.agent_status where device_id=(select id from t_dev2)) and (select active_seconds=(select n from t_att) from public.attendance where employee_id='00000000-0000-0000-0000-000000000007'),'Break time is shown as a break and not added to work time');
+select test.assert((public.command('attendance_heartbeat',null,null,'{"device_id":"device-zzzz1"}')->>'on_break')::boolean,'Browser time is not counted during a break either');
+select public.command('end_break');
+select test.assert(not (public.work_status()->>'on_break')::boolean and (public.work_status()->>'streak_seconds')::integer=0,'Ending the break early resets the streak');
+select public.command('start_break');
+update public.work_breaks set ends_at=now()-interval '1 second' where user_id='00000000-0000-0000-0000-000000000007' and ended_at is null;
+select test.assert(not (public.work_status()->>'on_break')::boolean and (public.work_status()->>'last_break_ended_at') is not null,'A break closes by itself when its 10 minutes are up');
+-- Offline sync.
+update public.agent_devices set last_seen_at=now()-interval '30 seconds' where id=(select id from t_dev2);
+delete from public.agent_minutes where user_id='00000000-0000-0000-0000-000000000007';
+create temp table t_att2 as select active_seconds as n from public.attendance where employee_id='00000000-0000-0000-0000-000000000007';
+create temp table t_sync as select public.agent_heartbeat((select r->>'token' from t_pair2),jsonb_build_object('state','idle','active_seconds',0,'backlog',jsonb_build_array(
+ jsonb_build_object('minute',now()-interval '2 hours','seconds',60),
+ jsonb_build_object('minute',now()-interval '2 hours 1 minute','seconds',45),
+ jsonb_build_object('minute',now()-interval '4 days','seconds',60),
+ jsonb_build_object('minute',now()+interval '1 hour','seconds',60),
+ jsonb_build_object('minute',now()-interval '1 hour','seconds',500)))) as r;
+select test.assert((select (r->>'backlog_credited')::integer=165 from t_sync),'Stored offline minutes are credited (old, future and over-long entries are limited)');
+select test.assert((select active_seconds=(select n from t_att2)+165 from public.attendance where employee_id='00000000-0000-0000-0000-000000000007'),'Offline minutes are added to the attendance record they fall in');
+update public.agent_devices set last_seen_at=now()-interval '30 seconds' where id=(select id from t_dev2);
+select test.assert((public.agent_heartbeat((select r->>'token' from t_pair2),jsonb_build_object('state','idle','active_seconds',0,'backlog',jsonb_build_array(jsonb_build_object('minute',now()-interval '2 hours','seconds',60))))->>'backlog_credited')::integer=0,'Sending the same minute again credits nothing');
+insert into public.work_breaks(user_id,started_at,ends_at,ended_at,end_reason) values('00000000-0000-0000-0000-000000000007',now()-interval '5 hours',now()-interval '4 hours 50 minutes',now()-interval '4 hours 50 minutes','finished');
+update public.agent_devices set last_seen_at=now()-interval '30 seconds' where id=(select id from t_dev2);
+select test.assert((public.agent_heartbeat((select r->>'token' from t_pair2),jsonb_build_object('state','idle','active_seconds',0,'backlog',jsonb_build_array(jsonb_build_object('minute',now()-interval '4 hours 55 minutes','seconds',60))))->>'backlog_credited')::integer=0,'Offline minutes that fall inside a break are not credited');
 rollback;

@@ -73,3 +73,9 @@ All multi-record commands execute within one PostgreSQL transaction; row/advisor
 
 - When a project is created, the creator chooses its leader from the active managers. The leader owns the project from then on: creates its tasks, assigns people and reviews the work. The leader is notified.
 - The project leader (and the CEO) see every task in the project. Every other member sees only the tasks assigned to them, so one member cannot see another member's task. Task history, comments and developer details follow the same rule. Members still see the project they work on and its people.
+
+## Coffee breaks, offline sync, and RepairMe Desktop
+
+- **Breaks.** After 60 minutes of continuous work (a pause of 10 minutes or more resets the count) the employee is offered a 10-minute coffee break, as a prompt in the portal or desktop app and a Windows notification. They can start it or push it back 10 minutes. Break time is never counted as work, the watch pauses, and a notification says when the break is over. The state lives in the database, so the web portal and the desktop app always agree.
+- **Offline sync.** The desktop app keeps work minutes on the computer while the portal is unreachable and uploads them later. Each minute is credited once and at most 60 seconds, only from the last 3 days, and never inside a break.
+- **RepairMe Desktop.** A Windows app that shows this portal in its own window. Employees sign in with their normal username and password; signing in connects the computer automatically. See agent/README.md. The portal's /install page explains how to install it.
