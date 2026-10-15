@@ -7,6 +7,7 @@ export const commandSchema = z.object({
     'comment_ticket',
     'create_project',
     'create_task',
+    'delete_task',
     'task_transition',
     'submit_expense',
     'approve_expense',

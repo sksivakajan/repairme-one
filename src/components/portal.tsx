@@ -314,6 +314,18 @@ export function Portal({
     preview || section !== 'my-work'
       ? data.tasks
       : data.tasks.filter((t) => text(t, 'assignee_id') === user.id);
+  const isOverdue = (t: Row) =>
+    !!t.due_date &&
+    text(t, 'due_date') < colomboDay &&
+    !['completed', 'cancelled'].includes(text(t, 'status'));
+  const daysLate = (t: Row) =>
+    Math.max(1, Math.round((Date.parse(colomboDay) - Date.parse(text(t, 'due_date'))) / 86400000));
+  const overdueTasks = mine
+    .filter(isOverdue)
+    .sort((a, b) => text(a, 'due_date').localeCompare(text(b, 'due_date')));
+  const groupMates = (t: Row) =>
+    t.group_id ? data.tasks.filter((o) => o.group_id === t.group_id && o.id !== t.id) : [];
+  const canManageTasks = user.roles.some((r) => r === 'ceo' || r === 'manager');
   const filtered = (rows: Row[]) =>
     rows.filter((r) =>
       Object.values(r).some((v) => String(v).toLowerCase().includes(query.toLowerCase())),
@@ -630,6 +642,12 @@ export function Portal({
                   </div>
                   <strong>{text(t, 'title')}</strong>
                   <Badge value={text(t, 'priority')} />
+                  {isOverdue(t) && (
+                    <span className="badge urgent">Overdue · {daysLate(t)}d late</span>
+                  )}
+                  {text(t, 'individual_work') && (
+                    <small className="task-part">{text(t, 'individual_work')}</small>
+                  )}
                   <div className="task-project">
                     <FolderKanban size={14} />
                     {projectName(text(t, 'project_id'))}
@@ -1179,6 +1197,34 @@ export function Portal({
                 </div>
               </div>
             </>
+          )}
+          {['my-work', 'tasks'].includes(section) && overdueTasks.length > 0 && (
+            <Panel
+              className="operational-panel overdue-panel"
+              title={`Overdue tasks (${overdueTasks.length})`}
+            >
+              <div className="review-queue">
+                {overdueTasks.map((t) => (
+                  <div key={t.id}>
+                    <span>
+                      <strong>{text(t, 'title')}</strong>
+                      <small>
+                        {employeeName(text(t, 'assignee_id'))} ·{' '}
+                        {projectName(text(t, 'project_id'))} · due {date(text(t, 'due_date'))} ·{' '}
+                        {daysLate(t)} day
+                        {daysLate(t) === 1 ? '' : 's'} late
+                      </small>
+                    </span>
+                    <button
+                      className="button outline small-button"
+                      onClick={() => open('task-detail', t)}
+                    >
+                      {canManageTasks ? 'Close or delete' : 'Open'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </Panel>
           )}
           {['my-work', 'tasks', 'developer-workspace'].includes(section) && (
             <>
@@ -2955,7 +3001,19 @@ export function Portal({
       return (
         <Form
           action="create_task"
-          transform={(p) => ({ ...p, weight: Number(p.weight) })}
+          transform={(p) => {
+            const assignees = data.employees
+              .filter((e) => p[`pick_${e.id}`])
+              .map((e) => ({ id: e.id, work: String(p[`work_${e.id}`] ?? '') }));
+            const rest = Object.fromEntries(
+              Object.entries(p).filter(([k]) => !k.startsWith('pick_') && !k.startsWith('work_')),
+            );
+            return {
+              ...rest,
+              weight: Number(rest.weight),
+              ...(assignees.length ? { assignees } : {}),
+            };
+          }}
           submit="Create task"
         >
           <Field name="title" title="Task title" />
@@ -2969,17 +3027,26 @@ export function Portal({
               ))}
             </select>
           </label>
-          <label className="field">
-            Assignee
-            <select name="assignee_id">
-              <option value="">Unassigned</option>
-              {data.employees.map((e) => (
-                <option value={e.id} key={e.id}>
-                  {employeeName(e.id)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <fieldset className="assignee-list">
+            <legend>Assign to (choose one or more people)</legend>
+            {data.employees.map((e) => (
+              <div className="assignee-row" key={e.id}>
+                <label className="check-field">
+                  <input type="checkbox" name={`pick_${e.id}`} />
+                  <span>{employeeName(e.id)}</span>
+                </label>
+                <input
+                  name={`work_${e.id}`}
+                  placeholder="Their individual part (optional)"
+                  aria-label={`Individual part for ${employeeName(e.id)}`}
+                />
+              </div>
+            ))}
+            <small>
+              With several people, each one gets their own copy of this task to submit, be reviewed
+              and rated separately.
+            </small>
+          </fieldset>
           <p className="subtle">
             Anyone you assign is added to the project automatically; you do not need to add members
             first.
@@ -3019,6 +3086,31 @@ export function Portal({
               <dt>Assigned by</dt>
               <dd>{employeeName(text(row, 'reporter_id'))}</dd>
             </div>
+            {isOverdue(row) && (
+              <div>
+                <dt>Overdue</dt>
+                <dd>{daysLate(row)} days late</dd>
+              </div>
+            )}
+            {text(row, 'individual_work') && (
+              <div>
+                <dt>Individual part</dt>
+                <dd>{text(row, 'individual_work')}</dd>
+              </div>
+            )}
+            {groupMates(row).length > 0 && (
+              <div>
+                <dt>Shared with</dt>
+                <dd>
+                  {groupMates(row)
+                    .map(
+                      (o) =>
+                        `${employeeName(text(o, 'assignee_id'))} (${label(text(o, 'status'))})`,
+                    )
+                    .join(', ')}
+                </dd>
+              </div>
+            )}
             <div>
               <dt>Due date</dt>
               <dd>{date(text(row, 'due_date'))}</dd>
@@ -3040,16 +3132,20 @@ export function Portal({
             <label className="field">
               Next state
               <select name="state">
-                {(text(row, 'status') === 'todo'
-                  ? ['in_progress']
-                  : text(row, 'status') === 'in_progress'
-                    ? ['in_review']
-                    : text(row, 'status') === 'in_review'
-                      ? ['completed', 'in_progress']
-                      : []
-                ).map((s) => (
+                {[
+                  ...(text(row, 'status') === 'todo'
+                    ? ['in_progress']
+                    : text(row, 'status') === 'in_progress'
+                      ? ['in_review']
+                      : text(row, 'status') === 'in_review'
+                        ? ['completed', 'in_progress']
+                        : []),
+                  ...(canManageTasks && !['completed', 'cancelled'].includes(text(row, 'status'))
+                    ? ['cancelled']
+                    : []),
+                ].map((s) => (
                   <option key={s} value={s}>
-                    {label(s)}
+                    {s === 'cancelled' ? 'Close task (cancel)' : label(s)}
                   </option>
                 ))}
               </select>
@@ -3062,6 +3158,18 @@ export function Portal({
               Only the assignee submits work. Completion requires an independent project reviewer.
             </p>
           </Form>
+          {canManageTasks && !['completed', 'cancelled'].includes(text(row, 'status')) && (
+            <details className="danger-zone">
+              <summary>Delete this task</summary>
+              <Form action="delete_task" row={row} submit="Delete task">
+                <Field name="reason" title="Why is it being deleted?" />
+                <p className="small-note">
+                  The task disappears from every list but stays in the history and audit trail. A
+                  task with submitted work logs must be closed instead.
+                </p>
+              </Form>
+            </details>
+          )}
         </>
       );
     if (kind === 'expense-detail' && row)

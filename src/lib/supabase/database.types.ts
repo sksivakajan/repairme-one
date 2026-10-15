@@ -1361,6 +1361,11 @@ export type Database = { public: { Tables: {
       accepted_at: string | null;
       version: number;
       created_at: string;
+      group_id: string | null;
+      individual_work: string;
+      deleted_at: string | null;
+      deleted_by: string | null;
+      delete_reason: string | null;
     };
     Insert: {
       id?: string;
@@ -1383,6 +1388,11 @@ export type Database = { public: { Tables: {
       accepted_at?: string | null;
       version?: number;
       created_at?: string;
+      group_id?: string | null;
+      individual_work?: string;
+      deleted_at?: string | null;
+      deleted_by?: string | null;
+      delete_reason?: string | null;
     };
     Update: {
       id?: string;
@@ -1405,6 +1415,11 @@ export type Database = { public: { Tables: {
       accepted_at?: string | null;
       version?: number;
       created_at?: string;
+      group_id?: string | null;
+      individual_work?: string;
+      deleted_at?: string | null;
+      deleted_by?: string | null;
+      delete_reason?: string | null;
     };
     Relationships: [];
   };

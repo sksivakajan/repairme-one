@@ -53,3 +53,9 @@ All multi-record commands execute within one PostgreSQL transaction; row/advisor
 - Each account has one active session. Signing in on another device replaces the previous session; the old device is signed out on its next request and shown a message. Database access for the replaced session stops immediately (`active_user()` checks the current session).
 - Privileged accounts verify an authenticator code once per sign-in. If "Remember this device for 30 days" is ticked after a real code check, an HttpOnly cookie marks that browser; only its SHA-256 hash is stored. Sign-ins from that browser skip the code until the 30 days end or a password change, which revokes every remembered device. Database checks accept the remembered session through `mfa_satisfied()`; they do not accept an unverified session from an unknown device.
 - Migration `202610130012` must be applied together with the app update. Sessions that existed before it are not tracked until their next sign-in.
+
+## Multi-person tasks, overdue tasks, closing and deleting
+
+- A task can be given to several people. Each person gets their own copy (linked by a shared group), with an optional description of their individual part. Each copy has its own status, evidence, review and quality rating, so every person's work is reviewed and scored separately. The task detail shows who else shares the task and their status.
+- A task whose due date has passed and is not completed or cancelled is shown as Overdue (days late) on cards, in the detail view, and in an Overdue tasks panel at the top of My Work and Tasks.
+- A project manager or CEO can close an unfinished task (cancel with a reason) or delete it. Deleting hides the task from every list but keeps it in the task history and audit trail. Completed tasks and tasks with submitted or approved work logs cannot be deleted; close those instead.

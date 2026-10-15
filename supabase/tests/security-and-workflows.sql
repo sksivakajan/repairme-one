@@ -213,4 +213,24 @@ select test.assert(not public.mfa_satisfied(),'Revoking forgets trusted devices'
 select set_config('request.jwt.claims','{"aal":"aal1","session_id":"aaaaaaaa-0000-0000-0000-000000000006"}',true);
 select public.claim_session(repeat('a',64));
 select test.assert(not public.mfa_satisfied(),'Revoked device token no longer works');
+-- Multi-person tasks and task deletion.
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
+select set_config('request.jwt.claims','{"aal":"aal2","session_id":"aaaaaaaa-0000-0000-0000-000000000006"}',true);
+select public.command('create_task',null,null,'{"project_id":"10000000-0000-0000-0000-000000000001","title":"Shared deliverable","acceptance_criteria":"Done","weight":3,"due_date":"2026-10-31","assignees":[{"id":"00000000-0000-0000-0000-000000000007","work":"Write the report"},{"id":"00000000-0000-0000-0000-000000000002","work":"Prepare the figures"}]}');
+select test.assert((select count(*)=2 and count(distinct group_id)=1 and count(distinct assignee_id)=2 from public.tasks where title='Shared deliverable'),'One task assigned to two people creates two linked tasks');
+select test.assert((select individual_work='Prepare the figures' from public.tasks where title='Shared deliverable' and assignee_id='00000000-0000-0000-0000-000000000002'),'Each person keeps their own part');
+select test.assert((select count(*)=2 from public.project_members where project_id='10000000-0000-0000-0000-000000000001' and employee_id in ('00000000-0000-0000-0000-000000000007','00000000-0000-0000-0000-000000000002')),'Every assignee joins the project');
+select test.reject($$select public.command('create_task',null,null,'{"project_id":"10000000-0000-0000-0000-000000000001","title":"Dup","acceptance_criteria":"Done","weight":3,"due_date":"2026-10-31","assignees":[{"id":"00000000-0000-0000-0000-000000000007"},{"id":"00000000-0000-0000-0000-000000000007"}]}')$$,'once','Same person cannot be added twice');
+select test.assert((select not exists(select 1 from public.tasks where title='Dup')),'Rejected multi-assignment creates nothing');
+select test.reject($$select public.command('delete_task',(select id from public.tasks where title='Assign to new member'),(select version from public.tasks where title='Assign to new member'),'{"reason":"Not needed"}')$$,'work logs','Task with submitted work cannot be deleted');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
+select test.reject($$select public.command('delete_task',(select id from public.tasks where title='Shared deliverable' and assignee_id='00000000-0000-0000-0000-000000000007'),1,'{"reason":"Not mine"}')$$,'manager','Assignee cannot delete a task');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
+select test.reject($$select public.command('delete_task',(select id from public.tasks where title='Shared deliverable' and assignee_id='00000000-0000-0000-0000-000000000007'),1,'{"reason":"x"}')$$,'Reason','Delete needs a reason');
+select public.command('delete_task',(select id from public.tasks where title='Shared deliverable' and assignee_id='00000000-0000-0000-0000-000000000007'),1,'{"reason":"Scope removed"}');
+select test.assert((select status='cancelled' and deleted_at is not null from public.tasks where title='Shared deliverable' and assignee_id='00000000-0000-0000-0000-000000000007'),'Deleted task is cancelled and marked deleted');
+select test.assert((select count(*)=1 from public.task_history where reason='Deleted: Scope removed'),'Deletion is kept in task history');
+set local role authenticated;
+select test.assert((select count(*)=1 from public.tasks where title='Shared deliverable'),'Deleted task is hidden from lists, sibling task remains');
+reset role;
 rollback;
