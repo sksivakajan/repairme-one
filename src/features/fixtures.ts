@@ -8,6 +8,9 @@ export type PortalData = Record<
   | 'logs'
   | 'attendance'
   | 'attendanceDevices'
+  | 'agentDevices'
+  | 'agentStatus'
+  | 'projectMembers'
   | 'notifications'
   | 'settings'
   | 'income'
@@ -399,6 +402,43 @@ export const fixtures: PortalData = {
       status: 'recorded',
       active_seconds: 26400,
       last_seen_at: '2026-10-13T11:29:00Z',
+    },
+  ],
+  projectMembers: [
+    { id: 'p1:4', project_id: 'p1', employee_id: '4' },
+    { id: 'p1:6', project_id: 'p1', employee_id: '6' },
+  ],
+  agentDevices: [
+    {
+      id: 'ag1',
+      user_id: '4',
+      device_name: 'DESKTOP-DINUKA',
+      os: 'Windows 11',
+      agent_version: '1.0.0',
+      paired_at: '2026-10-12T04:00:00Z',
+      last_seen_at: '2026-10-13T11:29:00Z',
+      revoked_at: null,
+    },
+  ],
+  agentStatus: [
+    {
+      id: 'ag1',
+      device_id: 'ag1',
+      user_id: '4',
+      state: 'active',
+      cpu_percent: 31.5,
+      ram_percent: 62.4,
+      ram_used_mb: 9980,
+      ram_total_mb: 16000,
+      cpu_count: 8,
+      process_count: 214,
+      foreground_app: 'Code.exe',
+      input_idle_seconds: 4,
+      top_apps: [
+        { name: 'Code.exe', cpu: 12.4, ram_mb: 820 },
+        { name: 'chrome.exe', cpu: 8.1, ram_mb: 1450 },
+      ],
+      updated_at: '2026-10-13T11:29:00Z',
     },
   ],
   attendanceDevices: [

@@ -46,6 +46,117 @@ export type Database = { public: { Tables: {
     };
     Relationships: [];
   };
+  agent_devices: {
+    Row: {
+      id: string;
+      user_id: string;
+      token_hash: string;
+      device_name: string;
+      os: string;
+      agent_version: string;
+      paired_at: string;
+      last_seen_at: string | null;
+      revoked_at: string | null;
+    };
+    Insert: {
+      id?: string;
+      user_id: string;
+      token_hash: string;
+      device_name: string;
+      os?: string;
+      agent_version?: string;
+      paired_at?: string;
+      last_seen_at?: string | null;
+      revoked_at?: string | null;
+    };
+    Update: {
+      id?: string;
+      user_id?: string;
+      token_hash?: string;
+      device_name?: string;
+      os?: string;
+      agent_version?: string;
+      paired_at?: string;
+      last_seen_at?: string | null;
+      revoked_at?: string | null;
+    };
+    Relationships: [];
+  };
+  agent_pairings: {
+    Row: {
+      id: string;
+      user_id: string;
+      code_hash: string;
+      expires_at: string;
+      used_at: string | null;
+      created_at: string;
+    };
+    Insert: {
+      id?: string;
+      user_id: string;
+      code_hash: string;
+      expires_at: string;
+      used_at?: string | null;
+      created_at?: string;
+    };
+    Update: {
+      id?: string;
+      user_id?: string;
+      code_hash?: string;
+      expires_at?: string;
+      used_at?: string | null;
+      created_at?: string;
+    };
+    Relationships: [];
+  };
+  agent_status: {
+    Row: {
+      device_id: string;
+      user_id: string;
+      state: string;
+      cpu_percent: number;
+      ram_percent: number;
+      ram_used_mb: number;
+      ram_total_mb: number;
+      cpu_count: number;
+      process_count: number;
+      foreground_app: string;
+      input_idle_seconds: number;
+      top_apps: Json;
+      updated_at: string;
+    };
+    Insert: {
+      device_id: string;
+      user_id: string;
+      state: string;
+      cpu_percent?: number;
+      ram_percent?: number;
+      ram_used_mb?: number;
+      ram_total_mb?: number;
+      cpu_count?: number;
+      process_count?: number;
+      foreground_app?: string;
+      input_idle_seconds?: number;
+      top_apps?: Json;
+      updated_at?: string;
+    };
+    Update: {
+      device_id?: string;
+      user_id?: string;
+      state?: string;
+      cpu_percent?: number;
+      ram_percent?: number;
+      ram_used_mb?: number;
+      ram_total_mb?: number;
+      cpu_count?: number;
+      process_count?: number;
+      foreground_app?: string;
+      input_idle_seconds?: number;
+      top_apps?: Json;
+      updated_at?: string;
+    };
+    Relationships: [];
+  };
   attendance: {
     Row: {
       id: string;
@@ -1567,5 +1678,7 @@ finish_document: { Args: {document_id: string; }; Returns: undefined };
 trust_this_device: { Args: {token_hash: string;device_label?: string | null; }; Returns: undefined };
 claim_session: { Args: {trusted_hash?: string | null; }; Returns: undefined };
 revoke_trusted_devices: { Args: Record<PropertyKey, never>; Returns: undefined };
+agent_heartbeat: { Args: {token: string;payload: Json; }; Returns: Json };
+agent_pair: { Args: {code: string;device_name: string;os?: string | null;agent_version?: string | null; }; Returns: Json };
 command: { Args: {action: string;record_id?: string | null;expected_version?: number | null;payload?: Json | null; }; Returns: Json };
 }; Enums: { app_role: 'ceo' | 'admin' | 'hr' | 'finance' | 'manager' | 'employee' }; CompositeTypes: { [_ in never]: never } } };

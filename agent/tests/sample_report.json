@@ -1,0 +1,14 @@
+{
+  "state": "active",
+  "active_seconds": 28,
+  "cpu_percent": 12.5,
+  "ram_percent": 50.0,
+  "ram_used_mb": 8000,
+  "ram_total_mb": 16000,
+  "cpu_count": 8,
+  "process_count": 120,
+  "foreground_app": "code.exe",
+  "input_idle_seconds": 1,
+  "agent_version": "1.0.0",
+  "top_apps": [{ "name": "code.exe", "cpu": 5.2, "ram_mb": 800.0 }]
+}

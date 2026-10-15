@@ -15,3 +15,10 @@ releases/
 
 # Local Netlify folder
 .netlify
+
+# Desktop agent build output
+agent/build/
+agent/dist/
+agent/*.spec
+__pycache__/
+*.pyc

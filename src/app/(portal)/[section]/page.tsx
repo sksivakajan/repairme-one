@@ -75,6 +75,9 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     logs,
     attendance,
     attendanceDevices,
+    agentDevices,
+    agentStatus,
+    projectMembers,
     notifications,
     settings,
     income,
@@ -104,6 +107,9 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         'work_logs',
         'attendance',
         'attendance_devices',
+        'agent_devices',
+        'agent_status',
+        'project_members',
         'notifications',
         'company_settings',
         'income',
@@ -134,7 +140,14 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         ...result,
         data: result.data?.map((r) => ({
           ...r,
-          id: 'id' in r ? String(r.id) : `${r.attendance_id}:${r.device_id}`,
+          id:
+            'id' in r
+              ? String(r.id)
+              : 'attendance_id' in r
+                ? `${r.attendance_id}:${r.device_id}`
+                : 'device_id' in r
+                  ? String(r.device_id)
+                  : `${r.project_id}:${r.employee_id}`,
         })),
       };
     }),
@@ -148,6 +161,9 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     logs,
     attendance,
     attendanceDevices,
+    agentDevices,
+    agentStatus,
+    projectMembers,
     notifications,
     settings,
     income,
@@ -190,6 +206,9 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         logs: logs.data ?? [],
         attendance: attendance.data ?? [],
         attendanceDevices: attendanceDevices.data ?? [],
+        agentDevices: agentDevices.data ?? [],
+        agentStatus: agentStatus.data ?? [],
+        projectMembers: projectMembers.data ?? [],
         notifications: notifications.data ?? [],
         settings: settings.data ?? [],
         income: income.data ?? [],

@@ -36,7 +36,7 @@ for (const [name, columns] of tables) {
   }
   out += '    Relationships: [];\n  };\n';
 }
-const functionQuery = `select json_agg(json_build_object('name',p.proname,'names',p.proargnames,'types',array(select format_type(t,null) from unnest(p.proargtypes::oid[])t),'defaults',p.pronargdefaults,'returns',format_type(p.prorettype,null))) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('command','claim_session','trust_this_device','revoke_trusted_devices','session_is_current','mfa_satisfied','provision_employee','prepare_document','finish_document')`;
+const functionQuery = `select json_agg(json_build_object('name',p.proname,'names',p.proargnames,'types',array(select format_type(t,null) from unnest(p.proargtypes::oid[])t),'defaults',p.pronargdefaults,'returns',format_type(p.prorettype,null))) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('command','agent_pair','agent_heartbeat','claim_session','trust_this_device','revoke_trusted_devices','session_is_current','mfa_satisfied','provision_employee','prepare_document','finish_document')`;
 const functions = JSON.parse(
   execFileSync('psql', ['-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', functionQuery], {
     encoding: 'utf8',

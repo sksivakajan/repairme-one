@@ -49,6 +49,7 @@ import { canAccess, type Role } from '@/lib/permissions';
 import type { PortalData, Row } from '@/features/fixtures';
 import { ticketFixtures } from '@/features/ticket-fixtures';
 import { AWAY_AFTER_MS, deviceId, deviceLabel, formatDuration } from '@/lib/attendance';
+import { DigitalWatch } from '@/components/digital-watch';
 import { Ticketing, type TicketData } from '@/components/ticketing';
 import { workflowForms } from '@/features/workflow-forms';
 const nav: { slug: string; label: string; icon: LucideIcon }[] = [
@@ -71,6 +72,18 @@ const nav: { slug: string; label: string; icon: LucideIcon }[] = [
 const text = (r: Row, key: string) => String(r[key] ?? '');
 const num = (r: Row, key: string) => Number(r[key] ?? 0);
 const label = (s: string) => s.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const transitionLabel = (from: string, to: string) =>
+  to === 'in_progress'
+    ? from === 'todo'
+      ? 'Accept and start work'
+      : 'Send back for changes'
+    : to === 'in_review'
+      ? 'Submit for review'
+      : to === 'completed'
+        ? 'Approve and close'
+        : to === 'cancelled'
+          ? 'Close task (cancel)'
+          : label(to);
 const money = (n: number) => 'LKR ' + n.toLocaleString('en-LK', { maximumFractionDigits: 2 });
 const date = (s: string) =>
   s
@@ -213,6 +226,7 @@ export function Portal({
   const [dialog, setDialog] = useState<{ kind: string; row?: Row } | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pairing, setPairing] = useState<{ code: string; expires: string } | null>(null);
   const [formError, setFormError] = useState('');
   const [tab, setTab] = useState('Expenses');
   const [filter, setFilter] = useState('all');
@@ -284,6 +298,53 @@ export function Portal({
       : Date.now() - Date.parse(text(a, 'last_seen_at') || text(a, 'check_in')) < AWAY_AFTER_MS
         ? 'Active now'
         : 'Away / offline';
+  const ownDevices = data.agentDevices.filter(
+    (d) => text(d, 'user_id') === user.id && !d.revoked_at,
+  );
+  const ownAgent = data.agentStatus
+    .filter((s) => text(s, 'user_id') === user.id)
+    .sort((a, b) => text(b, 'updated_at').localeCompare(text(a, 'updated_at')))[0];
+  const deviceName = (id: string) =>
+    text(data.agentDevices.find((d) => d.id === id) ?? { id: '' }, 'device_name') || 'Computer';
+  const agentFresh = (s: Row) => Date.now() - Date.parse(text(s, 'updated_at')) < 150000;
+  const agentLabel = (s: Row) =>
+    !agentFresh(s)
+      ? 'Offline / asleep'
+      : text(s, 'state') === 'active'
+        ? 'Working'
+        : text(s, 'state') === 'locked'
+          ? 'PC locked'
+          : 'Idle';
+  const agentClass: Record<string, string> = {
+    Working: 'approved',
+    Idle: 'submitted',
+    'PC locked': 'submitted',
+    'Offline / asleep': 'draft',
+  };
+  async function createPairing() {
+    if (preview) {
+      setFormError(
+        'This is a read-only fixture preview. Connect Supabase to save changes securely.',
+      );
+      return;
+    }
+    setBusy(true);
+    setFormError('');
+    try {
+      const res = await fetch('/api/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_agent_pairing', payload: {} }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+      setPairing({ code: String(result.code), expires: String(result.expires_at) });
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Unable to create a code. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
   const presenceClass: Record<string, string> = {
     'Active now': 'approved',
     'Away / offline': 'submitted',
@@ -323,6 +384,9 @@ export function Portal({
   const overdueTasks = mine
     .filter(isOverdue)
     .sort((a, b) => text(a, 'due_date').localeCompare(text(b, 'due_date')));
+  // Overdue tasks leave their normal column and wait in Overdue until they are closed.
+  const inColumn = (t: Row, state: string) =>
+    state === 'overdue' ? isOverdue(t) : text(t, 'status') === state && !isOverdue(t);
   const groupMates = (t: Row) =>
     t.group_id ? data.tasks.filter((o) => o.group_id === t.group_id && o.id !== t.id) : [];
   const canManageTasks = user.roles.some((r) => r === 'ceo' || r === 'manager');
@@ -623,17 +687,21 @@ export function Portal({
   function Board() {
     return (
       <div className="kanban">
-        {['todo', 'in_progress', 'in_review', 'completed'].map((state) => (
+        {['todo', 'in_progress', 'in_review', 'completed', 'overdue'].map((state) => (
           <div className={`kanban-column ${state}`} key={state}>
             <div className="column-title">
               <span>
                 <i />
-                {state === 'todo' ? 'To Do' : label(state)}
+                {state === 'todo'
+                  ? 'Awaiting acceptance'
+                  : state === 'completed'
+                    ? 'Closed'
+                    : label(state)}
               </span>
-              <b>{mine.filter((t) => text(t, 'status') === state).length}</b>
+              <b>{mine.filter((t) => inColumn(t, state)).length}</b>
             </div>
             {filtered(mine)
-              .filter((t) => text(t, 'status') === state)
+              .filter((t) => inColumn(t, state))
               .map((t) => (
                 <button className="task-card" key={t.id} onClick={() => open('task-detail', t)}>
                   <div className="task-id">
@@ -1065,6 +1133,15 @@ export function Portal({
               userId={user.id}
               admin={user.roles.some((r) => r === 'ceo' || r === 'admin')}
               preview={preview}
+            />
+          )}
+          {['dashboard', 'my-work', 'attendance'].includes(section) && (
+            <DigitalWatch
+              key={`${todayRecord ? num(todayRecord, 'active_seconds') : 0}:${ownAgent ? text(ownAgent, 'updated_at') : ''}`}
+              baseSeconds={todayRecord ? num(todayRecord, 'active_seconds') : 0}
+              agentState={ownAgent ? text(ownAgent, 'state') : null}
+              agentUpdatedAt={ownAgent ? text(ownAgent, 'updated_at') : null}
+              checkedIn={!!(todayRecord && !todayRecord.check_out)}
             />
           )}
           {section === 'dashboard' && (
@@ -1946,6 +2023,48 @@ export function Portal({
                   </div>
                 </Panel>
               </div>
+              <Panel
+                className="operational-panel"
+                title="Desktop agent"
+                action={
+                  <button
+                    className="button yellow small-button"
+                    onClick={() => open('agent-connect')}
+                  >
+                    <Plus size={14} />
+                    Connect this PC
+                  </button>
+                }
+              >
+                <p className="agent-note">
+                  A small app on your computer reports whether the PC is awake and really in use, so
+                  your work time is counted accurately. It sends only: whether the PC is active,
+                  idle or locked; seconds since your last keyboard or mouse use (never what you
+                  type); CPU and memory use; and the names of the programs using the most resources
+                  and the program in front. It never records screens, keystrokes, window titles,
+                  files or web pages. When the PC sleeps or the app is closed, no time is counted.
+                </p>
+                <div className="review-queue">
+                  {ownDevices.map((d) => (
+                    <div key={d.id}>
+                      <span>
+                        <strong>{text(d, 'device_name')}</strong>
+                        <small>
+                          {text(d, 'os')} · agent {text(d, 'agent_version') || 'not reported yet'}
+                          {d.last_seen_at ? ` · last report ${clock(text(d, 'last_seen_at'))}` : ''}
+                        </small>
+                      </span>
+                      <button
+                        className="button outline small-button"
+                        onClick={() => command('revoke_agent_device', {}, d)}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {!ownDevices.length && <Empty message="No computer connected yet" />}
+              </Panel>
               {canSeeTeam && (
                 <>
                   <div className="team-stats">
@@ -2015,6 +2134,56 @@ export function Portal({
                         </tbody>
                       </table>
                       {!data.attendance.length && <Empty message="No attendance recorded yet" />}
+                    </div>
+                  </Panel>
+                  <Panel className="operational-panel" title="Computer activity (desktop agent)">
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Employee</th>
+                            <th>Computer</th>
+                            <th>State</th>
+                            <th>In front now</th>
+                            <th>CPU</th>
+                            <th>Memory</th>
+                            <th>Processes</th>
+                            <th>Busiest programs</th>
+                            <th>Last report</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.agentStatus.map((s) => (
+                            <tr key={s.id}>
+                              <td>{employeeName(text(s, 'user_id'))}</td>
+                              <td>{deviceName(text(s, 'device_id'))}</td>
+                              <td suppressHydrationWarning>
+                                <span className={`badge ${agentClass[agentLabel(s)]}`}>
+                                  {agentLabel(s)}
+                                </span>
+                              </td>
+                              <td>{text(s, 'foreground_app') || '—'}</td>
+                              <td>{num(s, 'cpu_percent').toFixed(0)}%</td>
+                              <td>
+                                {num(s, 'ram_percent').toFixed(0)}% ·{' '}
+                                {(num(s, 'ram_used_mb') / 1024).toFixed(1)} /{' '}
+                                {(num(s, 'ram_total_mb') / 1024).toFixed(0)} GB
+                              </td>
+                              <td>{num(s, 'process_count')}</td>
+                              <td className="apps-cell">
+                                {(Array.isArray(s.top_apps) ? (s.top_apps as Row[]) : [])
+                                  .slice(0, 3)
+                                  .map((a) => `${a.name} ${Number(a.cpu).toFixed(0)}%`)
+                                  .join(', ') || '—'}
+                              </td>
+                              <td>{clock(text(s, 'updated_at'))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {!data.agentStatus.length && (
+                        <Empty message="No computers are reporting yet" />
+                      )}
                     </div>
                   </Panel>
                   <Panel className="operational-panel" title="Time worked by employee">
@@ -2404,7 +2573,10 @@ export function Portal({
       <Dialog.Root
         open={!!dialog}
         onOpenChange={(v) => {
-          if (!v) setDialog(null);
+          if (!v) {
+            setDialog(null);
+            setPairing(null);
+          }
         }}
       >
         <Dialog.Portal>
@@ -2432,6 +2604,7 @@ export function Portal({
                       settings: 'Configure working policy',
                       document: 'Upload private document',
                       'log-detail': 'Review work log',
+                      'agent-connect': 'Connect a computer',
                       'candidate-detail': 'Candidate profile',
                     } as Record<string, string>
                   )[dialog.kind] ?? workflowForms[dialog.kind]?.title)
@@ -3020,12 +3193,15 @@ export function Portal({
           <label className="field">
             Project
             <select required name="project_id">
-              {data.projects.map((p) => (
-                <option value={p.id} key={p.id}>
-                  {text(p, 'name')}
-                </option>
-              ))}
+              {data.projects
+                .filter((p) => preview || text(p, 'manager_id') === user.id)
+                .map((p) => (
+                  <option value={p.id} key={p.id}>
+                    {text(p, 'name')}
+                  </option>
+                ))}
             </select>
+            <small>Only a project’s leader (the person who created it) can add tasks to it.</small>
           </label>
           <fieldset className="assignee-list">
             <legend>Assign to (choose one or more people)</legend>
@@ -3145,12 +3321,22 @@ export function Portal({
                     : []),
                 ].map((s) => (
                   <option key={s} value={s}>
-                    {s === 'cancelled' ? 'Close task (cancel)' : label(s)}
+                    {transitionLabel(text(row, 'status'), s)}
                   </option>
                 ))}
               </select>
             </label>
-            <Field name="evidence" title="Deliverable evidence / reviewer reason" />
+            <Field
+              name="evidence"
+              title={
+                text(row, 'status') === 'todo'
+                  ? 'Note (optional)'
+                  : text(row, 'status') === 'in_progress'
+                    ? 'Report / evidence of your work'
+                    : 'Reviewer comments'
+              }
+              required={text(row, 'status') !== 'todo'}
+            />
             {text(row, 'status') === 'in_review' && (
               <Field name="quality_rating" title="Reviewed quality (0 to 5)" type="number" />
             )}
@@ -3324,6 +3510,35 @@ export function Portal({
           </Form>
         </>
       );
+    if (kind === 'agent-connect')
+      return (
+        <div className="dialog-form">
+          {!pairing ? (
+            <>
+              <p>
+                Install the RepairMe Agent on the computer you work on, then connect it to your
+                account with a one-time code. Each account can connect up to 5 computers.
+              </p>
+              <button disabled={busy} className="button yellow full" onClick={createPairing}>
+                {busy ? 'Creating…' : 'Create connection code'}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="code-box" aria-label="Connection code">
+                {pairing.code.replace(/(.{4})(?=.)/g, '$1-').toUpperCase()}
+              </div>
+              <ol className="agent-steps">
+                <li>Install and open RepairMe Agent on your PC.</li>
+                <li>
+                  Enter this address: <strong>{window.location.origin}</strong>
+                </li>
+                <li>Enter the code above. It works once and expires in 10 minutes.</li>
+              </ol>
+            </>
+          )}
+        </div>
+      );
     if (kind === 'attendance')
       return (
         <div className="dialog-form">
@@ -3439,16 +3654,120 @@ export function Portal({
             <p>{text(row, 'client')}</p>
             <Badge value={text(row, 'status')} />
           </div>
-          <dl className="detail-list">
-            <div>
-              <dt>Due date</dt>
-              <dd>{date(text(row, 'due_date'))}</dd>
-            </div>
-            <div>
-              <dt>Tasks</dt>
-              <dd>{data.tasks.filter((t) => text(t, 'project_id') === row.id).length}</dd>
-            </div>
-          </dl>
+          {(() => {
+            const tasks = data.tasks
+              .filter((t) => text(t, 'project_id') === row.id)
+              .sort((a, b) => text(a, 'created_at').localeCompare(text(b, 'created_at')));
+            const leader = text(row, 'manager_id');
+            const memberIds = [
+              ...new Set([
+                leader,
+                ...data.projectMembers
+                  .filter((m) => text(m, 'project_id') === row.id)
+                  .map((m) => text(m, 'employee_id')),
+                ...tasks.map((t) => text(t, 'assignee_id')).filter(Boolean),
+              ]),
+            ];
+            const open = tasks.filter(
+              (t) => !['completed', 'cancelled'].includes(text(t, 'status')),
+            );
+            return (
+              <>
+                <dl className="detail-list">
+                  <div>
+                    <dt>Project leader</dt>
+                    <dd>{employeeName(leader)}</dd>
+                  </div>
+                  <div>
+                    <dt>Created by</dt>
+                    <dd>
+                      {employeeName(leader)}
+                      {row.created_at ? ` · ${date(text(row, 'created_at').slice(0, 10))}` : ''}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Start date</dt>
+                    <dd>{date(text(row, 'start_date')) || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Due date</dt>
+                    <dd>{date(text(row, 'due_date'))}</dd>
+                  </div>
+                  <div>
+                    <dt>Tasks</dt>
+                    <dd>
+                      {tasks.length} total · {open.length} open · {tasks.filter(isOverdue).length}{' '}
+                      overdue · {tasks.filter((t) => text(t, 'status') === 'completed').length}{' '}
+                      closed
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>People working</dt>
+                    <dd>{memberIds.length}</dd>
+                  </div>
+                </dl>
+                <h3 className="overview-heading">Team</h3>
+                <div className="review-queue">
+                  {memberIds.map((id) => {
+                    const theirs = tasks.filter((t) => text(t, 'assignee_id') === id);
+                    return (
+                      <div key={id}>
+                        <span>
+                          <strong>{employeeName(id)}</strong>
+                          <small>
+                            {id === leader ? 'Project leader · ' : ''}
+                            {theirs.length} task{theirs.length === 1 ? '' : 's'} ·{' '}
+                            {
+                              theirs.filter(
+                                (t) => !['completed', 'cancelled'].includes(text(t, 'status')),
+                              ).length
+                            }{' '}
+                            open
+                          </small>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <h3 className="overview-heading">Tasks</h3>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>No.</th>
+                        <th>Task</th>
+                        <th>Assigned to</th>
+                        <th>Created by</th>
+                        <th>Status</th>
+                        <th>Due</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tasks.map((t, i) => (
+                        <tr key={t.id}>
+                          <td>T-{i + 1}</td>
+                          <td>{text(t, 'title')}</td>
+                          <td>
+                            {text(t, 'assignee_id') ? employeeName(text(t, 'assignee_id')) : '—'}
+                          </td>
+                          <td>{employeeName(text(t, 'reporter_id'))}</td>
+                          <td>
+                            {isOverdue(t) ? (
+                              <span className="badge urgent">Overdue</span>
+                            ) : (
+                              <Badge value={text(t, 'status')} />
+                            )}
+                          </td>
+                          <td>{date(text(t, 'due_date'))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!tasks.length && <Empty message="No tasks in this project yet" />}
+                </div>
+              </>
+            );
+          })()}
           <Link className="button yellow full" href="/tasks" onClick={() => setDialog(null)}>
             Open task board <ArrowRight size={16} />
           </Link>
