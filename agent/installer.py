@@ -41,6 +41,11 @@ PRIVACY = (
 )
 
 
+def asset(name: str) -> Path:
+    base = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+    return base / 'assets' / name
+
+
 def default_dir() -> Path:
     return Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'Programs' / 'RepairMe'
 
@@ -215,10 +220,16 @@ def wizard(start: Path) -> None:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except (AttributeError, OSError):
         pass
-    header = tk.Frame(root, bg='#101820', height=64)
+    header = tk.Frame(root, bg='white', height=70, highlightbackground='#ffcc00', highlightthickness=0)
     header.pack(fill='x')
-    tk.Label(header, text='RepairMe', bg='#101820', fg='#ffcc00', font=('Segoe UI', 18, 'bold')).pack(side='left', padx=20, pady=12)
-    tk.Label(header, text='Fixed. Fast. Trusted.', bg='#101820', fg='#9fb0c3', font=('Segoe UI', 9)).pack(side='left')
+    tk.Frame(root, bg='#ffcc00', height=3).pack(fill='x')
+    try:
+        root.iconbitmap(str(asset('repairme.ico')))
+        logo = tk.PhotoImage(file=str(asset('wordmark-header.png')))
+        tk.Label(header, image=logo, bg='white').pack(side='left', padx=20, pady=8)
+        header.image = logo  # keep a reference so the picture is not discarded
+    except tk.TclError:
+        tk.Label(header, text='RepairMe', bg='white', fg='#101820', font=('Segoe UI', 18, 'bold')).pack(side='left', padx=20, pady=12)
     body = ttk.Frame(root, padding=22)
     body.pack(fill='both', expand=True)
     footer = ttk.Frame(root, padding=(22, 0, 22, 18))

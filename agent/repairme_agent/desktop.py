@@ -52,16 +52,21 @@ def already_running() -> bool:
     return ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
 
 
+def asset(name: str) -> Path:
+    base = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))
+    return base / 'assets' / name
+
+
 def make_icon(color: str):
+    """The RepairMe logo mark with a small dot showing the state: green working, amber idle, purple break, grey offline."""
     from PIL import Image, ImageDraw
 
-    image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+    try:
+        image = Image.open(asset('repairme-64.png')).convert('RGBA')
+    except OSError:
+        image = Image.new('RGBA', (64, 64), (255, 204, 0, 255))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((4, 4, 60, 60), 14, fill='#ffcc00')
-    draw.ellipse((14, 14, 50, 50), outline='#101820', width=5)
-    draw.line((32, 32, 32, 21), fill='#101820', width=5)
-    draw.line((32, 32, 41, 32), fill='#101820', width=5)
-    draw.ellipse((40, 40, 60, 60), fill=color, outline='white', width=3)
+    draw.ellipse((40, 40, 62, 62), fill=color, outline='white', width=3)
     return image
 
 
@@ -246,7 +251,8 @@ class DesktopApp:
         self.window.events.closing += self.on_closing
         data = Path(os.environ.get('APPDATA') or Path.home()) / 'RepairMeAgent' / 'webview'
         data.mkdir(parents=True, exist_ok=True)
-        webview.start(private_mode=False, storage_path=str(data))
+        icon = asset('repairme.ico')
+        webview.start(private_mode=False, storage_path=str(data), icon=str(icon) if icon.exists() else None)
         self.stop_worker()
 
 

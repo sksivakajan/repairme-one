@@ -28,14 +28,14 @@ it; monitoring staff may need consent or notice under local law.
 
 Every 5 seconds the app looks at the PC.
 
-| PC looks like | Counted as |
-| --- | --- |
-| Keyboard or mouse used in the last 5 minutes | working |
-| No input for over 5 minutes, but the program in front changes, CPU stays high and moving (a build, a render), or memory moves by 5 points | working |
-| No input, and CPU, memory and the front program all unchanged for 5 minutes ("stable") | not working |
-| Screen locked | not working |
-| PC asleep, shut down, or the app closed (more than 30 seconds between looks) | not working; nothing is counted for the gap |
-| Coffee break | not working |
+| PC looks like                                                                                                                             | Counted as                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Keyboard or mouse used in the last 5 minutes                                                                                              | working                                     |
+| No input for over 5 minutes, but the program in front changes, CPU stays high and moving (a build, a render), or memory moves by 5 points | working                                     |
+| No input, and CPU, memory and the front program all unchanged for 5 minutes ("stable")                                                    | not working                                 |
+| Screen locked                                                                                                                             | not working                                 |
+| PC asleep, shut down, or the app closed (more than 30 seconds between looks)                                                              | not working; nothing is counted for the gap |
+| Coffee break                                                                                                                              | not working                                 |
 
 The portal caps live credit to the real time since the previous report, and offline minutes are checked: each minute
 once, at most 60 seconds, only from the last 3 days, never inside a break.
@@ -55,6 +55,17 @@ RepairMeSetup.exe /S                                   silent install
 RepairMeSetup.exe /S --dir "D:\Apps\RepairMe" --no-autostart --no-shortcuts --desktop-icon
 RepairMeSetup.exe --uninstall /S [--purge]             silent uninstall (--purge also deletes saved sign-in and stored time)
 ```
+
+## Signing (important for Windows 11)
+
+Windows 11 PCs with **Smart App Control** (or company WDAC / AppLocker rules) only run programs signed by a trusted
+certificate authority. An unsigned build can be blocked with the message "An Application Control policy has blocked
+this file". The fix is to sign both programs:
+
+1. Buy a code-signing certificate (OV/EV from a certificate authority) or use Microsoft Trusted Signing.
+2. Before building, set `REPAIRME_SIGN_PFX` (path to the .pfx file) and `REPAIRME_SIGN_PASSWORD`, then run `build.bat`.
+   It signs `RepairMeDesktop.exe` first, then embeds it in `RepairMeSetup.exe` and signs that too.
+3. Managed PCs can alternatively get an allow rule from IT (a WDAC or AppLocker publisher or hash rule).
 
 Windows needs Microsoft Edge WebView2 (part of Windows 11 and current Windows 10). The setup warns if it is missing.
 Uninstall from Settings → Apps → RepairMe Desktop.
