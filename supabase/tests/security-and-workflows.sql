@@ -157,4 +157,28 @@ select test.reject($$select public.command('transition_ticket',(select id from p
 select test.reject($$select public.command_business('create_project',null,null,'{}')$$,'permission denied','Ticket wrapper cannot be bypassed');
 reset role;
 select test.reject($$update public.ticket_events set event='changed'$$,'immutable','Ticket history is immutable');
+-- Team tracking: assignment without a separate membership step, work quality, attendance time.
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
+select test.assert((select not exists(select 1 from public.project_members where employee_id='00000000-0000-0000-0000-000000000007')),'Employee is not yet a project member');
+select public.command('create_task',null,null,'{"project_id":"10000000-0000-0000-0000-000000000001","title":"Assign to new member","assignee_id":"00000000-0000-0000-0000-000000000007","acceptance_criteria":"Done","weight":3,"due_date":"2026-10-31"}');
+select test.assert((select exists(select 1 from public.project_members where project_id='10000000-0000-0000-0000-000000000001' and employee_id='00000000-0000-0000-0000-000000000007')),'Assigning a task adds the assignee to the project');
+select test.assert((select reporter_id='00000000-0000-0000-0000-000000000004' from public.tasks where title='Assign to new member'),'Task records who assigned it');
+select test.reject($$select public.command('create_task',null,null,'{"project_id":"10000000-0000-0000-0000-000000000002","title":"Not my project","assignee_id":"00000000-0000-0000-0000-000000000007","acceptance_criteria":"Done","weight":3,"due_date":"2026-10-31"}')$$,'reviewer','Non-manager cannot assign into another project');
+select test.assert((select not exists(select 1 from public.project_members where project_id='10000000-0000-0000-0000-000000000002' and employee_id='00000000-0000-0000-0000-000000000007')),'Rejected assignment does not add a member');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
+select public.command('submit_work_log',null,null,format('{"task_id":"%s","start_at":"2026-10-14T03:00:00Z","end_at":"2026-10-14T05:00:00Z","description":"Daily work","self_quality_rating":"4.5"}',(select id from public.tasks where title='Assign to new member'))::jsonb);
+select test.assert((select self_quality_rating=4.5 from public.work_logs where employee_id='00000000-0000-0000-0000-000000000007'),'Worker self quality rating is saved on the work log');
+select test.reject(format($f$select public.command('submit_work_log',null,null,'{"task_id":"%s","start_at":"2026-10-15T03:00:00Z","end_at":"2026-10-15T05:00:00Z","description":"Bad","self_quality_rating":"6"}')$f$,(select id from public.tasks where title='Assign to new member')),'between 0 and 5','Out-of-range quality rating rejected');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
+select public.command('check_in');
+select public.command('attendance_heartbeat',null,null,'{"device_id":"device-aaaa1","device_label":"Chrome on Windows"}');
+update public.attendance set check_in=now()-interval '3 hours',last_seen_at=now()-interval '60 seconds' where employee_id='00000000-0000-0000-0000-000000000007';
+select public.command('attendance_heartbeat',null,null,'{"device_id":"device-bbbb2","device_label":"Safari on iPhone"}');
+select test.assert((select active_seconds=60 from public.attendance where employee_id='00000000-0000-0000-0000-000000000007'),'Heartbeat counts the 60 seconds since the previous one');
+select test.assert((select count(*)=2 from public.attendance_devices),'Both devices are recorded');
+update public.attendance set last_seen_at=now()-interval '2 hours' where employee_id='00000000-0000-0000-0000-000000000007';
+select public.command('attendance_heartbeat',null,null,'{"device_id":"device-aaaa1","device_label":"Chrome on Windows"}');
+select test.assert((select active_seconds=60 from public.attendance where employee_id='00000000-0000-0000-0000-000000000007'),'Time while the computer slept is not counted');
+select public.command('check_out');
+select test.assert((select check_out is not null from public.attendance where employee_id='00000000-0000-0000-0000-000000000007'),'Check out closes attendance');
 rollback;

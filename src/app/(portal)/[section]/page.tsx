@@ -74,6 +74,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     leave,
     logs,
     attendance,
+    attendanceDevices,
     notifications,
     settings,
     income,
@@ -102,6 +103,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         'leave_requests',
         'work_logs',
         'attendance',
+        'attendance_devices',
         'notifications',
         'company_settings',
         'income',
@@ -122,8 +124,19 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         'releases',
       ] as const
     ).map(async (t) => {
-      const result = await db.from(t).select('*').limit(100);
-      return { ...result, data: result.data?.map((r) => ({ ...r, id: String(r.id) })) };
+      const query = db.from(t).select('*');
+      const result = await (
+        t === 'attendance'
+          ? query.order('day', { ascending: false }).order('check_in', { ascending: false })
+          : query
+      ).limit(t === 'attendance' ? 300 : 100);
+      return {
+        ...result,
+        data: result.data?.map((r) => ({
+          ...r,
+          id: 'id' in r ? String(r.id) : `${r.attendance_id}:${r.device_id}`,
+        })),
+      };
     }),
   );
   const results = [
@@ -134,6 +147,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     leave,
     logs,
     attendance,
+    attendanceDevices,
     notifications,
     settings,
     income,
@@ -175,6 +189,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         leave: leave.data ?? [],
         logs: logs.data ?? [],
         attendance: attendance.data ?? [],
+        attendanceDevices: attendanceDevices.data ?? [],
         notifications: notifications.data ?? [],
         settings: settings.data ?? [],
         income: income.data ?? [],

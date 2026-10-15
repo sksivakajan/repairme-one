@@ -33,6 +33,9 @@ export type Database = { public: { Tables: {
       check_in: string;
       check_out: string | null;
       status: string;
+      active_seconds: number;
+      last_seen_at: string | null;
+      last_device: string | null;
     };
     Insert: {
       id?: string;
@@ -41,6 +44,9 @@ export type Database = { public: { Tables: {
       check_in?: string;
       check_out?: string | null;
       status?: string;
+      active_seconds?: number;
+      last_seen_at?: string | null;
+      last_device?: string | null;
     };
     Update: {
       id?: string;
@@ -49,6 +55,9 @@ export type Database = { public: { Tables: {
       check_in?: string;
       check_out?: string | null;
       status?: string;
+      active_seconds?: number;
+      last_seen_at?: string | null;
+      last_device?: string | null;
     };
     Relationships: [];
   };
@@ -82,6 +91,33 @@ export type Database = { public: { Tables: {
       reason?: string;
       status?: string;
       reviewer_id?: string | null;
+    };
+    Relationships: [];
+  };
+  attendance_devices: {
+    Row: {
+      attendance_id: string;
+      device_id: string;
+      device_label: string;
+      first_seen_at: string;
+      last_seen_at: string;
+      active_seconds: number;
+    };
+    Insert: {
+      attendance_id: string;
+      device_id: string;
+      device_label?: string;
+      first_seen_at?: string;
+      last_seen_at?: string;
+      active_seconds?: number;
+    };
+    Update: {
+      attendance_id?: string;
+      device_id?: string;
+      device_label?: string;
+      first_seen_at?: string;
+      last_seen_at?: string;
+      active_seconds?: number;
     };
     Relationships: [];
   };
@@ -1429,6 +1465,7 @@ export type Database = { public: { Tables: {
       reviewer_id: string | null;
       review_reason: string | null;
       version: number;
+      self_quality_rating: number | null;
     };
     Insert: {
       id?: string;
@@ -1441,6 +1478,7 @@ export type Database = { public: { Tables: {
       reviewer_id?: string | null;
       review_reason?: string | null;
       version?: number;
+      self_quality_rating?: number | null;
     };
     Update: {
       id?: string;
@@ -1453,6 +1491,7 @@ export type Database = { public: { Tables: {
       reviewer_id?: string | null;
       review_reason?: string | null;
       version?: number;
+      self_quality_rating?: number | null;
     };
     Relationships: [];
   };

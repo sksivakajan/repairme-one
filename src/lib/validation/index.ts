@@ -15,6 +15,7 @@ export const commandSchema = z.object({
     'reconcile_expense',
     'check_in',
     'check_out',
+    'attendance_heartbeat',
     'submit_leave',
     'decide_leave',
     'cancel_leave',

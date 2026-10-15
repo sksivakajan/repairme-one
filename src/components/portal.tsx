@@ -48,6 +48,7 @@ import type { LucideIcon } from 'lucide-react';
 import { canAccess, type Role } from '@/lib/permissions';
 import type { PortalData, Row } from '@/features/fixtures';
 import { ticketFixtures } from '@/features/ticket-fixtures';
+import { AWAY_AFTER_MS, deviceId, deviceLabel, formatDuration } from '@/lib/attendance';
 import { Ticketing, type TicketData } from '@/components/ticketing';
 import { workflowForms } from '@/features/workflow-forms';
 const nav: { slug: string; label: string; icon: LucideIcon }[] = [
@@ -218,10 +219,77 @@ export function Portal({
   const [view, setView] = useState('board');
   const [page, setPage] = useState(1);
   const name = user.first_name + ' ' + user.last_name;
+  const openAttendance =
+    !preview && data.attendance.some((a) => text(a, 'employee_id') === user.id && !a.check_out);
+  useEffect(() => {
+    // Worked time is the sum of gaps between heartbeats of up to 3 minutes, so time while the
+    // computer sleeps or the app is closed is never counted.
+    if (!openAttendance) return;
+    const beat = () =>
+      void fetch('/api/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'attendance_heartbeat',
+          payload: { device_id: deviceId(), device_label: deviceLabel() },
+        }),
+      }).catch(() => undefined);
+    const wake = () => {
+      if (document.visibilityState === 'visible') beat();
+    };
+    beat();
+    const timer = setInterval(beat, 60000);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', wake);
+    };
+  }, [openAttendance]);
+  useEffect(() => {
+    if (section !== 'attendance' || preview) return;
+    const timer = setInterval(() => router.refresh(), 120000);
+    return () => clearInterval(timer);
+  }, [section, preview, router]);
   const employeeName = (id: string) => {
     const e = data.employees.find((e) => e.id === id);
     return e ? text(e, 'first_name') + ' ' + text(e, 'last_name') : 'Team member';
   };
+  const colomboDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo' }).format(
+    new Date(),
+  );
+  const ownAttendance = data.attendance.filter((a) => text(a, 'employee_id') === user.id);
+  const todayRecord = ownAttendance.find((a) => text(a, 'day') === colomboDay || !a.check_out);
+  const canSeeTeam = preview || user.roles.some((r) => ['ceo', 'hr', 'manager'].includes(r));
+  const deviceNames = (attendanceId: string) =>
+    data.attendanceDevices
+      .filter((d) => text(d, 'attendance_id') === attendanceId)
+      .map((d) => text(d, 'device_label'))
+      .join(', ') || '—';
+  const clock = (value: string) =>
+    new Date(value).toLocaleTimeString('en-GB', { timeZone: 'Asia/Colombo' });
+  const awaySeconds = (a: Row) => {
+    const end = a.check_out ?? a.last_seen_at ?? a.check_in;
+    return Math.max(
+      0,
+      (Date.parse(String(end)) - Date.parse(text(a, 'check_in'))) / 1000 - num(a, 'active_seconds'),
+    );
+  };
+  const presence = (a: Row) =>
+    a.check_out
+      ? 'Checked out'
+      : Date.now() - Date.parse(text(a, 'last_seen_at') || text(a, 'check_in')) < AWAY_AFTER_MS
+        ? 'Active now'
+        : 'Away / offline';
+  const workedByEmployee = [...new Set(data.attendance.map((a) => text(a, 'employee_id')))].map(
+    (id) => {
+      const rows = data.attendance.filter((a) => text(a, 'employee_id') === id);
+      return {
+        id,
+        days: rows.length,
+        worked: rows.reduce((n, a) => n + num(a, 'active_seconds'), 0),
+      };
+    },
+  );
   const projectName = (id: string) =>
     text(data.projects.find((p) => p.id === id) ?? { id: '' }, 'name') || 'Unassigned project';
   const pending = data.expenses.filter((e) => text(e, 'approval_status') === 'submitted');
@@ -1183,6 +1251,7 @@ export function Portal({
                           <tr>
                             <th>Task</th>
                             <th>Project</th>
+                            <th>Assigned by</th>
                             <th>Priority</th>
                             <th>Status</th>
                             <th>Due date</th>
@@ -1200,6 +1269,7 @@ export function Portal({
                                 </button>
                               </td>
                               <td>{projectName(text(t, 'project_id'))}</td>
+                              <td>{employeeName(text(t, 'reporter_id'))}</td>
                               <td>
                                 <Badge value={text(t, 'priority')} />
                               </td>
@@ -1699,6 +1769,7 @@ export function Portal({
                       <th>Task</th>
                       <th>Work description</th>
                       <th>Duration</th>
+                      <th>Self quality</th>
                       <th>Status</th>
                       <th>Action</th>
                     </tr>
@@ -1720,6 +1791,11 @@ export function Portal({
                             3600000
                           ).toFixed(1)}{' '}
                           h
+                        </td>
+                        <td>
+                          {w.self_quality_rating == null
+                            ? '—'
+                            : `${num(w, 'self_quality_rating')} / 5`}
                         </td>
                         <td>
                           <Badge value={text(w, 'status')} />
@@ -1748,13 +1824,29 @@ export function Portal({
                     <span className="stat-icon green">
                       <Clock size={30} />
                     </span>
-                    <h2>Be present. Do good work.</h2>
-                    <p>Check-in and check-out are explicit attendance events.</p>
+                    <h2>
+                      {todayRecord && !todayRecord.check_out
+                        ? 'You are checked in'
+                        : 'Be present. Do good work.'}
+                    </h2>
+                    <p>
+                      Check-in and check-out are explicit attendance events. Worked time counts only
+                      while this app is open and your computer is awake.
+                    </p>
+                    {todayRecord && (
+                      <p>
+                        <strong>{formatDuration(num(todayRecord, 'active_seconds'))}</strong> worked
+                        today
+                      </p>
+                    )}
                     <button className="button yellow" onClick={() => open('attendance')}>
                       <Clock size={17} />
                       Record attendance
                     </button>
-                    <small>Schedule and break comparisons require configured company policy.</small>
+                    <small>
+                      Check in on one device and keep working on another; every device you use is
+                      tracked under your account.
+                    </small>
                   </div>
                 </Panel>
                 <Panel title="Attendance history">
@@ -1765,25 +1857,19 @@ export function Portal({
                           <th>Date</th>
                           <th>Check in</th>
                           <th>Check out</th>
+                          <th>Worked</th>
+                          <th>Devices</th>
                           <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.attendance.map((a) => (
+                        {ownAttendance.map((a) => (
                           <tr key={a.id}>
                             <td>{date(text(a, 'day'))}</td>
-                            <td>
-                              {new Date(text(a, 'check_in')).toLocaleTimeString('en-GB', {
-                                timeZone: 'Asia/Colombo',
-                              })}
-                            </td>
-                            <td>
-                              {a.check_out
-                                ? new Date(text(a, 'check_out')).toLocaleTimeString('en-GB', {
-                                    timeZone: 'Asia/Colombo',
-                                  })
-                                : 'Incomplete'}
-                            </td>
+                            <td>{clock(text(a, 'check_in'))}</td>
+                            <td>{a.check_out ? clock(text(a, 'check_out')) : 'Incomplete'}</td>
+                            <td>{formatDuration(num(a, 'active_seconds'))}</td>
+                            <td>{deviceNames(a.id)}</td>
                             <td>
                               <Badge value={text(a, 'status')} />
                             </td>
@@ -1791,10 +1877,69 @@ export function Portal({
                         ))}
                       </tbody>
                     </table>
-                    {!data.attendance.length && <Empty message="You haven’t checked in yet" />}
+                    {!ownAttendance.length && <Empty message="You haven’t checked in yet" />}
                   </div>
                 </Panel>
               </div>
+              {canSeeTeam && (
+                <>
+                  <Panel className="operational-panel" title="Team attendance">
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Employee</th>
+                            <th>Date</th>
+                            <th>Check in</th>
+                            <th>Check out</th>
+                            <th>Worked</th>
+                            <th>Away / asleep</th>
+                            <th>Status</th>
+                            <th>Devices</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered(data.attendance).map((a) => (
+                            <tr key={a.id}>
+                              <td>{employeeName(text(a, 'employee_id'))}</td>
+                              <td>{date(text(a, 'day'))}</td>
+                              <td>{clock(text(a, 'check_in'))}</td>
+                              <td>{a.check_out ? clock(text(a, 'check_out')) : '—'}</td>
+                              <td>{formatDuration(num(a, 'active_seconds'))}</td>
+                              <td>{formatDuration(awaySeconds(a))}</td>
+                              <td suppressHydrationWarning>{presence(a)}</td>
+                              <td>{deviceNames(a.id)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {!data.attendance.length && <Empty message="No attendance recorded yet" />}
+                    </div>
+                  </Panel>
+                  <Panel className="operational-panel" title="Time worked by employee">
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Employee</th>
+                            <th>Days present</th>
+                            <th>Total worked</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {workedByEmployee.map((w) => (
+                            <tr key={w.id}>
+                              <td>{employeeName(w.id)}</td>
+                              <td>{w.days}</td>
+                              <td>{formatDuration(w.worked)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Panel>
+                </>
+              )}
             </>
           )}
           {section === 'performance' && (
@@ -2778,6 +2923,10 @@ export function Portal({
               ))}
             </select>
           </label>
+          <p className="subtle">
+            Anyone you assign is added to the project automatically; you do not need to add members
+            first.
+          </p>
           <Field name="acceptance_criteria" title="Acceptance criteria" />
           <div className="form-grid">
             <label className="field">
@@ -2808,6 +2957,10 @@ export function Portal({
             <div>
               <dt>Assignee</dt>
               <dd>{employeeName(text(row, 'assignee_id'))}</dd>
+            </div>
+            <div>
+              <dt>Assigned by</dt>
+              <dd>{employeeName(text(row, 'reporter_id'))}</dd>
             </div>
             <div>
               <dt>Due date</dt>
@@ -3032,7 +3185,15 @@ export function Portal({
       );
     if (kind === 'work-log')
       return (
-        <Form action="submit_work_log" submit="Submit for review">
+        <Form
+          action="submit_work_log"
+          submit="Submit for review"
+          transform={(p) => ({
+            ...p,
+            start_at: new Date(String(p.start_at)).toISOString(),
+            end_at: new Date(String(p.end_at)).toISOString(),
+          })}
+        >
           <label className="field">
             Assigned task
             <select name="task_id">
@@ -3043,15 +3204,35 @@ export function Portal({
               ))}
             </select>
           </label>
-          <Field name="start_at" title="Start (ISO timestamp with timezone)" />
-          <Field name="end_at" title="End (ISO timestamp with timezone)" />
+          <Field name="start_at" title="Start" type="datetime-local" />
+          <Field name="end_at" title="End" type="datetime-local" />
           <Field name="description" title="What did you work on?" />
+          <label className="field">
+            How good was today’s work? (your own rating, optional)
+            <select name="self_quality_rating" defaultValue="">
+              <option value="">Not rated</option>
+              {[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0].map((r) => (
+                <option key={r} value={r}>
+                  {r} / 5
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="subtle">
+            Your rating is shown to your reviewer. The reviewed rating decides the quality score.
+          </p>
         </Form>
       );
     if (kind === 'log-detail' && row)
       return (
         <>
           <p>{text(row, 'description')}</p>
+          <p className="subtle">
+            Worker’s own quality rating:{' '}
+            {row.self_quality_rating == null
+              ? 'not rated'
+              : `${num(row, 'self_quality_rating')} / 5`}
+          </p>
           <Form action="review_work_log" row={row} submit="Record decision">
             <label className="field">
               Decision

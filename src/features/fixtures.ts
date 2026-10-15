@@ -7,6 +7,7 @@ export type PortalData = Record<
   | 'leave'
   | 'logs'
   | 'attendance'
+  | 'attendanceDevices'
   | 'notifications'
   | 'settings'
   | 'income'
@@ -388,7 +389,26 @@ export const fixtures: PortalData = {
       version: 1,
     },
   ],
-  attendance: [],
+  attendance: [
+    {
+      id: 'a1',
+      employee_id: '4',
+      day: '2026-10-13',
+      check_in: '2026-10-13T03:30:00Z',
+      check_out: '2026-10-13T11:30:00Z',
+      status: 'recorded',
+      active_seconds: 26400,
+      last_seen_at: '2026-10-13T11:29:00Z',
+    },
+  ],
+  attendanceDevices: [
+    {
+      id: 'a1:d1',
+      attendance_id: 'a1',
+      device_label: 'Chrome on Windows',
+      active_seconds: 26400,
+    },
+  ],
   notifications: [
     {
       id: 'n1',

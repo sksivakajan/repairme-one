@@ -39,3 +39,11 @@ Known local database example: accepted/agreed = 3/3, quality 5, on-time 3/3, tea
 ## Reliability boundaries
 
 All multi-record commands execute within one PostgreSQL transaction; row/advisory locks and unique constraints prevent duplicate decisions and executions. Account invitation and document upload span provider services and use compensating/staged handling; they are not claimed to be cross-service atomic. Provider-level integration tests are still required.
+
+## Task assignment, daily work quality, and worked time
+
+- A project manager (or CEO) can assign a task to any active employee. The assignee is added to the project automatically, so no separate membership step is needed. The task records who assigned it, and My Work shows "Assigned by".
+- A work log can carry the worker's own quality rating (0–5). It is shown to the reviewer only; the reviewed task rating still decides the quality score.
+- Attendance is per account, so an employee can check in on one device and work on another. While checked in, each open browser sends a heartbeat every minute with a device id. Only the time between consecutive heartbeats of up to 3 minutes counts as worked time, so time while a computer sleeps or the app is closed is not counted. Check-out credits the final interval.
+- A check-in left open for more than 16 hours without a heartbeat is closed automatically at the last time the employee was seen, so a forgotten check-out does not block the next day.
+- CEO, HR, and reporting managers see each employee's name, check-in/out, worked time, away time, current presence (active/away), and devices. Worked time is app-activity time, not proof of productivity.
