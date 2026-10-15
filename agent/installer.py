@@ -28,17 +28,22 @@ SETUP_EXE = 'RepairMeSetup.exe'
 UNINSTALL_KEY = rf'Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}'
 RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 WEBVIEW2_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
-PRIVACY = (
-    'RepairMe Desktop shows your company workspace in its own window and measures your work time.\n\n'
-    'It sends to your company portal:\n'
-    '  • whether this computer is active, idle or locked\n'
-    '  • seconds since you last used the keyboard or mouse (never what you type)\n'
-    '  • CPU and memory use, the number of running programs, the names of the busiest programs, and the program in front\n\n'
-    'It never records your screen, keystrokes, window titles, files or web pages.\n\n'
-    'While the computer sleeps or the app is closed, no time is counted. If the internet drops, work time is kept on this computer and uploaded later.\n\n'
-    'After 60 minutes of continuous work you are offered a 10-minute coffee break, with a Windows notification.\n\n'
-    'You sign in with your normal RepairMe username and password. You can remove the app at any time from Settings → Apps.'
-)
+# (kind, text): p = paragraph, h = heading, b = bullet
+PRIVACY = [
+    ('p', 'RepairMe Desktop shows your company workspace in its own window and measures your work time.'),
+    ('h', 'What it sends to your company portal'),
+    ('b', 'Whether this computer is active, idle or locked'),
+    ('b', 'Seconds since you last used the keyboard or mouse (never what you type)'),
+    ('b', 'CPU and memory use, the number of running programs, the names of the busiest programs, and the program in front'),
+    ('h', 'What it never records'),
+    ('p', 'Your screen, keystrokes, window titles, files or web pages.'),
+    ('h', 'When time is not counted'),
+    ('p', 'While the computer sleeps, the screen is locked, or the app is closed. If the internet drops, work time is kept on this computer and uploaded later.'),
+    ('h', 'Coffee breaks'),
+    ('p', 'After 60 minutes of continuous work you are offered a 10-minute break with a Windows notification. Break time is not counted as work.'),
+    ('h', 'Your account'),
+    ('p', 'You sign in with your normal RepairMe username and password. You can remove the app at any time from Settings → Apps.'),
+]
 
 
 def asset(name: str) -> Path:
@@ -212,14 +217,14 @@ def wizard(start: Path) -> None:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
 
-    root = tk.Tk()
-    root.title(f'{DISPLAY} Setup')
-    root.geometry('640x460')
-    root.resizable(False, False)
     try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # before the window exists, so text is sharp
     except (AttributeError, OSError):
         pass
+    root = tk.Tk()
+    root.title(f'{DISPLAY} Setup')
+    root.geometry('700x580')
+    root.resizable(False, False)
     header = tk.Frame(root, bg='white', height=70, highlightbackground='#ffcc00', highlightthickness=0)
     header.pack(fill='x')
     tk.Frame(root, bg='#ffcc00', height=3).pack(fill='x')
@@ -230,10 +235,12 @@ def wizard(start: Path) -> None:
         header.image = logo  # keep a reference so the picture is not discarded
     except tk.TclError:
         tk.Label(header, text='RepairMe', bg='white', fg='#101820', font=('Segoe UI', 18, 'bold')).pack(side='left', padx=20, pady=12)
-    body = ttk.Frame(root, padding=22)
+    # The footer is placed first so the buttons always keep their space, however long a page is.
+    footer = ttk.Frame(root, padding=(24, 12, 24, 16))
+    footer.pack(side='bottom', fill='x')
+    ttk.Separator(root).pack(side='bottom', fill='x')
+    body = ttk.Frame(root, padding=(24, 20, 24, 8))
     body.pack(fill='both', expand=True)
-    footer = ttk.Frame(root, padding=(22, 0, 22, 18))
-    footer.pack(fill='x')
 
     folder = tk.StringVar(value=str(start))
     autostart = tk.BooleanVar(value=True)
@@ -242,9 +249,9 @@ def wizard(start: Path) -> None:
     launch = tk.BooleanVar(value=True)
     log = tk.StringVar(value='Starting…')
     state = {'page': 0, 'installed': None, 'failed': '', 'done': False, 'log': 'Starting…'}
-    back = ttk.Button(footer, text='Back')
-    nxt = ttk.Button(footer, text='Next')
-    cancel = ttk.Button(footer, text='Cancel', command=root.destroy)
+    back = ttk.Button(footer, text='Back', width=11)
+    nxt = ttk.Button(footer, text='Next', width=11)
+    cancel = ttk.Button(footer, text='Cancel', width=11, command=root.destroy)
     cancel.pack(side='right', padx=(8, 0))
     nxt.pack(side='right')
     back.pack(side='right', padx=8)
@@ -275,11 +282,38 @@ def wizard(start: Path) -> None:
             ).pack(anchor='w')
         elif page == 1:
             heading('What RepairMe Desktop does')
-            box = tk.Text(body, height=14, wrap='word', font=('Segoe UI', 10), relief='solid', borderwidth=1)
-            box.insert('1.0', PRIVACY)
+            # Packed first, at the bottom, so the tick box always stays visible under the scrolling text.
+            ttk.Checkbutton(
+                body,
+                text='I have read this and I agree',
+                variable=agree,
+                command=lambda: nxt.state(['!disabled' if agree.get() else 'disabled']),
+            ).pack(side='bottom', anchor='w', pady=(10, 0))
+            frame = ttk.Frame(body)
+            frame.pack(fill='both', expand=True)
+            box = tk.Text(
+                frame,
+                wrap='word',
+                font=('Segoe UI', 10),
+                bg='white',
+                relief='flat',
+                highlightthickness=1,
+                highlightbackground='#d6dbe3',
+                highlightcolor='#d6dbe3',
+                padx=16,
+                pady=12,
+                spacing3=6,
+                cursor='arrow',
+            )
+            bar = ttk.Scrollbar(frame, command=box.yview)
+            box.configure(yscrollcommand=bar.set)
+            bar.pack(side='right', fill='y')
+            box.pack(side='left', fill='both', expand=True)
+            box.tag_configure('h', font=('Segoe UI', 10, 'bold'), spacing1=6, spacing3=3)
+            box.tag_configure('b', lmargin1=12, lmargin2=30, tabs=('30',), spacing3=3)
+            for kind, text in PRIVACY:
+                box.insert('end', ('•\t' if kind == 'b' else '') + text + '\n', kind)
             box.configure(state='disabled')
-            box.pack(fill='both', expand=True)
-            ttk.Checkbutton(body, text='I have read this and I agree', variable=agree, command=lambda: nxt.state(['!disabled' if agree.get() else 'disabled'])).pack(anchor='w', pady=(10, 0))
             nxt.state(['!disabled' if agree.get() else 'disabled'])
         elif page == 2:
             heading('Choose where to install')
