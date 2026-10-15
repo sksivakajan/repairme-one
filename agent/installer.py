@@ -107,14 +107,44 @@ def make_shortcut(link: Path, target: Path, args: str = '') -> None:
     )
 
 
-def stop_running_app() -> None:
-    if IS_WINDOWS:
-        subprocess.run(['taskkill', '/F', '/IM', APP_EXE], capture_output=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+def previous_install() -> Path | None:
+    if not IS_WINDOWS:
+        return None
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+            return Path(winreg.QueryValueEx(key, 'InstallLocation')[0])
+    except OSError:
+        return None
+
+
+def stop_running_app(*folders: Path | None) -> None:
+    """Close the running app, but only a copy that lives in one of the given install folders.
+
+    Closing by program name would also close an unrelated copy, for example a different install of the same app.
+    """
+    if not IS_WINDOWS or os.environ.get('REPAIRME_SETUP_TEST'):
+        return
+    wanted = [str(folder).rstrip('\\').lower() for folder in folders if folder]
+    if not wanted:
+        return
+    script = (
+        "Get-CimInstance Win32_Process -Filter \"Name='%s'\" | ForEach-Object {"
+        "$path=([string]$_.ExecutablePath).ToLower();"
+        "if ($env:RM_DIRS.Split('|') | Where-Object { $path.StartsWith($_ + '\\') }) { Stop-Process -Id $_.ProcessId -Force }}"
+    ) % APP_EXE
+    subprocess.run(
+        ['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+        env={**os.environ, 'RM_DIRS': '|'.join(wanted)},
+        capture_output=True,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
 
 
 def install(target: Path, autostart: bool = True, shortcuts: bool = True, desktop_icon: bool = False, register: bool = True, say=print) -> Path:
-    say('Closing any running copy…')
-    stop_running_app()
+    say('Closing the running copy, if any…')
+    stop_running_app(target, previous_install())
     say('Copying files…')
     target.mkdir(parents=True, exist_ok=True)
     app = target / APP_EXE
@@ -172,7 +202,7 @@ def uninstall(target: Path | None = None, purge: bool = False, say=print) -> Non
             except OSError:
                 target = default_dir()
         say('Closing the app…')
-        stop_running_app()
+        stop_running_app(target)
         for link in (start_menu() / f'{DISPLAY}.lnk', desktop_folder() / f'{DISPLAY}.lnk'):
             link.unlink(missing_ok=True)
         try:

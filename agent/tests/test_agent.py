@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -16,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from repairme_agent import api, storage  # noqa: E402
 from repairme_agent.activity import ActivityTracker, Sample  # noqa: E402
 from repairme_agent.desktop import DesktopApp  # noqa: E402
+from repairme_agent.instance import SingleInstance  # noqa: E402
 from repairme_agent.ledger import Ledger, minute_key  # noqa: E402
 from repairme_agent.worker import Worker  # noqa: E402
 
@@ -264,6 +266,36 @@ class DesktopBridge(unittest.TestCase):
         self.app.window.hide.assert_called_once()
         self.app.quitting = True
         self.assertTrue(self.app.on_closing())
+
+
+@unittest.skipUnless(sys.platform == 'win32', 'Windows only')
+class OpeningTheAppAgain(unittest.TestCase):
+    def test_a_second_launch_asks_the_running_app_to_show_its_window(self):
+        name = f'test-{os.getpid()}-{time.time_ns()}'
+        running = SingleInstance(name)
+        self.assertTrue(running.first)
+        shown = threading.Event()
+        running.watch(shown.set)
+        again = SingleInstance(name)
+        self.assertFalse(again.first)  # this copy would exit
+        again.ask_running_copy_to_show()
+        self.assertTrue(shown.wait(3), 'the running app was not asked to show its window')
+        running.close()
+
+    def test_every_launch_is_heard_not_only_the_first(self):
+        name = f'test-{os.getpid()}-{time.time_ns()}'
+        running = SingleInstance(name)
+        count = []
+        running.watch(lambda: count.append(1))
+        for _ in range(3):
+            SingleInstance(name).ask_running_copy_to_show()
+            time.sleep(0.8)
+        self.assertEqual(len(count), 3)
+        running.close()
+
+    def test_different_installs_do_not_interfere(self):
+        self.assertTrue(SingleInstance(f'a-{time.time_ns()}').first)
+        self.assertTrue(SingleInstance(f'b-{time.time_ns()}').first)
 
 
 class Handler(BaseHTTPRequestHandler):

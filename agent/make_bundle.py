@@ -28,7 +28,9 @@ IF WINDOWS BLOCKS IT
 
 USING IT
   - Closing the window does not stop the app. It keeps running next to the clock
-    (the RepairMe icon). Right-click that icon to open RepairMe or to quit.
+    (the RepairMe icon, which may be under the small "^" arrow). To see the window again,
+    open RepairMe from the Start menu or desktop shortcut, or double-click the icon.
+    Right-click the icon to open RepairMe or to quit.
   - Check in and out on the Attendance page as usual.
   - After one hour of continuous work you get a Windows notification offering a
     10-minute coffee break. Start the break, or push it back 10 minutes.

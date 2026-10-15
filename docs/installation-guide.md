@@ -70,8 +70,10 @@ up-to-date Windows 10; the installer warns if it is missing).
 
 **Everyday use**
 
-- Closing the window does not stop the app. It keeps running by the clock (RepairMe icon, bottom right). Right-click
-  it to open RepairMe or to quit. Quitting stops time tracking.
+- Closing the window does not stop the app. It keeps running by the clock (RepairMe icon, bottom right; it may be under
+  the small "^" arrow). To see the window again, open RepairMe from the Start menu or the desktop shortcut, or
+  double-click the icon. Right-click the icon to open RepairMe or to quit. Quitting stops time tracking.
+- To update the app, run the new `RepairMeSetup.exe`. It closes the old copy by itself and keeps your sign-in.
 - After one hour of continuous work you get a Windows notification: **Start a 10-minute break**, or **Not now**
   (it asks again in 10 minutes). Break time is not counted as work, and you are told when the break is over.
 - If the internet drops, work time is kept on the computer and uploaded when it comes back.

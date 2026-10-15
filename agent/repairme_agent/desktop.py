@@ -5,7 +5,6 @@ hands this app a one-time code through `DesktopApi.pair`, so the computer is con
 """
 from __future__ import annotations
 
-import ctypes
 import os
 import platform
 import socket
@@ -18,6 +17,7 @@ import webbrowser
 from pathlib import Path
 
 from . import __version__, api, storage
+from .instance import SingleInstance
 from .ledger import Ledger
 from .worker import Worker
 
@@ -43,13 +43,6 @@ computer. It uploads by itself when the internet is back.</p>
   document.getElementById('today').textContent=fmt(s.today_seconds)+' worked today';
   document.getElementById('wait').textContent=s.unsent_seconds?fmt(s.unsent_seconds)+' waiting to upload':'Everything is uploaded.'});
 </script>"""
-
-
-def already_running() -> bool:
-    if sys.platform != 'win32':
-        return False
-    ctypes.windll.kernel32.CreateMutexW(None, False, 'Local\\RepairMeDesktopSingleInstance')
-    return ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
 
 
 def asset(name: str) -> Path:
@@ -98,7 +91,11 @@ class DesktopApi:
 
 
 class DesktopApp:
-    def __init__(self, server: str | None = None, hidden: bool = False) -> None:
+    def __init__(
+        self, server: str | None = None, hidden: bool = False, instance: SingleInstance | None = None
+    ) -> None:
+        self.instance = instance
+        self.pending_show = False
         self.config = storage.load_config()
         self.server = api.normalize_server(server or (self.config or {}).get('server') or DEFAULT_SERVER)
         self.hidden = hidden
@@ -203,9 +200,16 @@ class DesktopApp:
 
     # ----- window -----
     def show_window(self) -> None:
-        if self.window is not None:
-            self.window.show()
-            self.window.restore()
+        if self.window is None:
+            self.pending_show = True  # the window is still being created; show it as soon as it exists
+            return
+        self.window.show()
+        self.window.restore()
+
+    def _after_load(self) -> None:
+        if self.pending_show:
+            self.pending_show = False
+            self.show_window()
 
     def on_closing(self) -> bool:
         if self.quitting:
@@ -237,6 +241,9 @@ class DesktopApp:
         import webview
 
         self.start_tray()
+        if self.instance is not None:
+            # Opening the app again (shortcut, Start menu) brings the hidden window back.
+            self.instance.watch(self.show_window)
         online = self.reachable()
         self.window = webview.create_window(
             'RepairMe',
@@ -249,6 +256,7 @@ class DesktopApp:
             hidden=self.hidden,
         )
         self.window.events.closing += self.on_closing
+        self.window.events.loaded += self._after_load
         data = Path(os.environ.get('APPDATA') or Path.home()) / 'RepairMeAgent' / 'webview'
         data.mkdir(parents=True, exist_ok=True)
         icon = asset('repairme.ico')
@@ -257,7 +265,10 @@ class DesktopApp:
 
 
 def main(server: str | None = None, hidden: bool = False) -> int:
-    if already_running():
+    instance = SingleInstance()
+    if not instance.first:
+        # RepairMe is already running (possibly hidden in the tray): ask it to show its window, then stop.
+        instance.ask_running_copy_to_show()
         return 0
-    DesktopApp(server, hidden).run()
+    DesktopApp(server, hidden, instance).run()
     return 0
