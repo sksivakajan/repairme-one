@@ -66,7 +66,10 @@ export default async function Page({ params }: { params: Promise<{ section: stri
           : undefined,
       }
     : undefined;
-  const leaderRows = section === 'projects' ? ((await db.rpc('leader_candidates')).data ?? []) : [];
+  // Managers and the CEO can pick or change a project leader from any page that shows a project.
+  const leaderRows = user.roles.some((r) => r === 'ceo' || r === 'manager')
+    ? ((await db.rpc('leader_candidates')).data ?? [])
+    : [];
   const [
     employees,
     projects,

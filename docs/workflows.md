@@ -79,3 +79,8 @@ All multi-record commands execute within one PostgreSQL transaction; row/advisor
 - **Breaks.** After 60 minutes of continuous work (a pause of 10 minutes or more resets the count) the employee is offered a 10-minute coffee break, as a prompt in the portal or desktop app and a Windows notification. They can start it or push it back 10 minutes. Break time is never counted as work, the watch pauses, and a notification says when the break is over. The state lives in the database, so the web portal and the desktop app always agree.
 - **Offline sync.** The desktop app keeps work minutes on the computer while the portal is unreachable and uploads them later. Each minute is credited once and at most 60 seconds, only from the last 3 days, and never inside a break.
 - **RepairMe Desktop.** A Windows app that shows this portal in its own window. Employees sign in with their normal username and password; signing in connects the computer automatically. See agent/README.md. The portal's /install page explains how to install it.
+
+## Changing a project's leader, and deleting a project
+
+- The CEO or the project's current leader can change the leader of any existing project (Projects → open a project → Change leader). The new leader must be an active manager. The new leader is notified, creates the project's tasks and sees every task. The previous leader keeps only tasks assigned to them.
+- The CEO or the leader can delete a project with a reason. The project and its tasks disappear from every list and open tasks are cancelled with a history entry; everything stays in the database and audit trail. A project with completed tasks or submitted work logs cannot be deleted.

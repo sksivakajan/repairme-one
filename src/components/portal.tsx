@@ -376,10 +376,17 @@ export function Portal({
       (e) => text(e, 'approval_status') === 'approved' && text(e, 'execution_status') === 'unpaid',
     )
     .reduce((n, e) => n + num(e, 'approved_amount'), 0);
-  const mine =
-    preview || section !== 'my-work'
-      ? data.tasks
-      : data.tasks.filter((t) => text(t, 'assignee_id') === user.id);
+  // Your own tasks, plus every task of the projects you lead (the CEO sees all). Nobody else's task shows here.
+  const leadsProject = (projectId: string) =>
+    user.roles.includes('ceo') ||
+    data.projects.some((p) => p.id === projectId && text(p, 'manager_id') === user.id);
+  const mine = preview
+    ? data.tasks
+    : data.tasks.filter(
+        (t) =>
+          text(t, 'assignee_id') === user.id ||
+          (section !== 'my-work' && leadsProject(text(t, 'project_id'))),
+      );
   const isOverdue = (t: Row) =>
     !!t.due_date &&
     text(t, 'due_date') < colomboDay &&
@@ -2618,6 +2625,8 @@ export function Portal({
                       document: 'Upload private document',
                       'log-detail': 'Review work log',
                       'agent-connect': 'Connect a computer',
+                      'project-leader': 'Change project leader',
+                      'project-delete': 'Delete project',
                       'candidate-detail': 'Candidate profile',
                     } as Record<string, string>
                   )[dialog.kind] ?? workflowForms[dialog.kind]?.title)
@@ -3702,11 +3711,29 @@ export function Portal({
               ]),
             ];
             const seesAll = leader === user.id || user.roles.includes('ceo') || preview;
-            const open = tasks.filter(
+            const openTasks = tasks.filter(
               (t) => !['completed', 'cancelled'].includes(text(t, 'status')),
             );
             return (
               <>
+                {(preview ||
+                  user.roles.includes('ceo') ||
+                  (user.roles.includes('manager') && leader === user.id)) && (
+                  <div className="form-actions">
+                    <button
+                      className="button outline small-button"
+                      onClick={() => open('project-leader', row)}
+                    >
+                      Change leader
+                    </button>
+                    <button
+                      className="button outline small-button"
+                      onClick={() => open('project-delete', row)}
+                    >
+                      Delete project
+                    </button>
+                  </div>
+                )}
                 <dl className="detail-list">
                   <div>
                     <dt>Project leader</dt>
@@ -3730,9 +3757,9 @@ export function Portal({
                   <div>
                     <dt>Tasks</dt>
                     <dd>
-                      {tasks.length} total · {open.length} open · {tasks.filter(isOverdue).length}{' '}
-                      overdue · {tasks.filter((t) => text(t, 'status') === 'completed').length}{' '}
-                      closed
+                      {tasks.length} total · {openTasks.length} open ·{' '}
+                      {tasks.filter(isOverdue).length} overdue ·{' '}
+                      {tasks.filter((t) => text(t, 'status') === 'completed').length} closed
                     </dd>
                   </div>
                   <div>
@@ -3812,6 +3839,49 @@ export function Portal({
             Open task board <ArrowRight size={16} />
           </Link>
         </>
+      );
+    if (kind === 'project-leader' && row)
+      return (
+        <Form action="set_project_leader" row={row} submit="Change leader">
+          <p>
+            <strong>{text(row, 'name')}</strong>
+            <br />
+            Current leader: {employeeName(text(row, 'manager_id'))}
+          </p>
+          <label className="field">
+            New project leader
+            <select name="leader_id" required defaultValue="">
+              <option value="" disabled>
+                Choose the new leader…
+              </option>
+              {data.leaders
+                .filter((l) => l.id !== text(row, 'manager_id'))
+                .map((l) => (
+                  <option value={l.id} key={l.id}>
+                    {employeeName(l.id)}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <p className="small-note">
+            The new leader creates the project’s tasks, assigns people and sees every task. The
+            previous leader no longer manages the project and sees only tasks assigned to them.
+          </p>
+        </Form>
+      );
+    if (kind === 'project-delete' && row)
+      return (
+        <Form action="delete_project" row={row} submit="Delete project">
+          <p>
+            Delete <strong>{text(row, 'name')}</strong>? The project and its tasks disappear from
+            every list. Open tasks are cancelled. Everything stays in the history and audit trail.
+          </p>
+          <Field name="reason" title="Why is it being deleted?" />
+          <p className="small-note">
+            A project with completed tasks or submitted work logs cannot be deleted, because that
+            work is part of the record.
+          </p>
+        </Form>
       );
     if (kind === 'settings')
       return (

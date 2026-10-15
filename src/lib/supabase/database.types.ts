@@ -1247,6 +1247,9 @@ export type Database = { public: { Tables: {
       reason: string | null;
       version: number;
       created_at: string;
+      deleted_at: string | null;
+      deleted_by: string | null;
+      delete_reason: string | null;
     };
     Insert: {
       id?: string;
@@ -1260,6 +1263,9 @@ export type Database = { public: { Tables: {
       reason?: string | null;
       version?: number;
       created_at?: string;
+      deleted_at?: string | null;
+      deleted_by?: string | null;
+      delete_reason?: string | null;
     };
     Update: {
       id?: string;
@@ -1273,6 +1279,9 @@ export type Database = { public: { Tables: {
       reason?: string | null;
       version?: number;
       created_at?: string;
+      deleted_at?: string | null;
+      deleted_by?: string | null;
+      delete_reason?: string | null;
     };
     Relationships: [];
   };

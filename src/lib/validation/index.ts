@@ -8,6 +8,8 @@ export const commandSchema = z.object({
     'create_project',
     'create_task',
     'delete_task',
+    'set_project_leader',
+    'delete_project',
     'create_agent_pairing',
     'start_break',
     'snooze_break',
