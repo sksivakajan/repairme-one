@@ -3125,16 +3125,6 @@ tbody tr:hover {
   align-self: end;
   justify-self: start;
 }
-.mfa-qr {
-  display: block;
-  width: 240px;
-  max-width: 100%;
-  height: auto;
-  margin: 20px auto;
-  padding: 12px;
-  background: white;
-  border-radius: 8px;
-}
 .auth-status details code {
   display: block;
   overflow-wrap: anywhere;
@@ -3485,4 +3475,32 @@ tbody tr:hover {
   padding: 8px 14px;
   font-size: 11px;
   cursor: pointer;
+}
+
+.comment-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.comment-list li {
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.comment-list p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.log-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+.log-filter .field {
+  margin: 0;
+  min-width: 160px;
 }

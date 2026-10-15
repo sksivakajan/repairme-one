@@ -3,7 +3,7 @@ import { identity } from '@/lib/supabase/identity';
 import { serverClient } from '@/lib/supabase/server';
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await identity();
-  if (!user || user.needsMfa) return new NextResponse(null, { status: 401 });
+  if (!user) return new NextResponse(null, { status: 401 });
   const { id } = await params;
   const db = await serverClient();
   const { data } = await db.from('documents').select('path').eq('id', id).single();

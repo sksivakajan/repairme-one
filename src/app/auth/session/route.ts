@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { cookies } from 'next/headers';
-import { TRUST_COOKIE, hashToken } from '@/lib/supabase/session';
 import { serverClient, isConfigured } from '@/lib/supabase/server';
 const schema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('login'), email: z.email(), password: z.string().min(8).max(128) }),
@@ -65,10 +63,7 @@ export async function POST(req: NextRequest) {
     );
   if (data.mode === 'login') {
     // This sign-in becomes the account's only active session; any other device is signed out.
-    const token = (await cookies()).get(TRUST_COOKIE)?.value;
-    const { error: claimError } = await db.rpc('claim_session', {
-      trusted_hash: token ? hashToken(token) : null,
-    });
+    const { error: claimError } = await db.rpc('claim_session', { trusted_hash: null });
     if (claimError) {
       await db.auth.signOut({ scope: 'local' });
       return NextResponse.json(
@@ -77,14 +72,8 @@ export async function POST(req: NextRequest) {
       );
     }
   }
-  const response = NextResponse.json(
+  return NextResponse.json(
     { redirect: '/dashboard' },
     { headers: { 'Cache-Control': 'private, no-store' } },
   );
-  if (data.mode === 'password') {
-    // A new password forgets every remembered device.
-    await db.rpc('revoke_trusted_devices');
-    response.cookies.delete(TRUST_COOKIE);
-  }
-  return response;
 }

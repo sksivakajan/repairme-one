@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     );
   const actor = await identity();
-  if (!actor || actor.needsMfa || !actor.roles.some((r) => r === 'ceo' || r === 'admin'))
+  if (!actor || !actor.roles.some((r) => r === 'ceo' || r === 'admin'))
     return new NextResponse(null, { status: 403 });
   const parsed = schema.safeParse(await req.json());
   if (!parsed.success)

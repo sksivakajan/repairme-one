@@ -14,8 +14,7 @@ export async function POST(request: NextRequest) {
       { status: 503 },
     );
   const user = await identity();
-  if (!user || user.needsMfa)
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   let body: unknown;
   try {
     body = await request.json();

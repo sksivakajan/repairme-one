@@ -15,7 +15,10 @@ insert into public.tasks(id,project_id,title,assignee_id,reporter_id,acceptance_
 insert into public.expenses(id,submitted_by,payee,purpose,category,amount,evidence) values('30000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','Supplier','Equipment','Office',100,'quote'),('30000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Supplier','Owner claim','Travel',50,'receipt');
 insert into public.documents(id,owner_id,name,path,classification,mime_type,size_bytes) values('60000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000007','Private file','private/file.pdf','own','application/pdf',100);
 insert into storage.objects(id,bucket_id,name) values('60000000-0000-0000-0000-000000000001','private-documents','private/file.pdf');
-update public.company_settings set working_weekdays=array[1,2,3,4,5],break_minutes=60,break_paid=false;
+-- Every day is a working day and the work-log window is open all day, so the tests do not depend on the date they run.
+update public.company_settings set working_weekdays=array[0,1,2,3,4,5,6],break_minutes=60,break_paid=false,work_start='00:00',work_end='23:59:59';
+create function test.at(minutes integer) returns timestamptz language sql stable as $$select (date_trunc('day',now() at time zone (select timezone from public.company_settings))+minutes*interval '1 minute') at time zone (select timezone from public.company_settings)$$;
+grant execute on function test.at(integer) to authenticated;
 insert into public.leave_ledger(employee_id,type_id,kind,days,reason) select '00000000-0000-0000-0000-000000000003',id,'accrual',3,'Test accrual' from public.leave_types where name='Company allowance';
 insert into public.accounts(id,code,name,kind) values('70000000-0000-0000-0000-000000000001','1000','Cash','asset'),('70000000-0000-0000-0000-000000000002','4000','Revenue','income');
 insert into public.fiscal_periods(id,name,start_date,end_date) values('80000000-0000-0000-0000-000000000001','October','2026-10-01','2026-10-31');
@@ -34,9 +37,68 @@ select test.reject($$select public.command('set_role','00000000-0000-0000-0000-0
 select test.reject($$select public.command('task_transition','20000000-0000-0000-0000-000000000001',1,'{"state":"completed","evidence":"work","quality_rating":5}')$$,'Invalid task transition','Cannot skip review');
 select public.command('task_transition','20000000-0000-0000-0000-000000000001',1,'{"state":"in_review","evidence":"Deliverable link"}');
 select test.reject($$select public.command('task_transition','20000000-0000-0000-0000-000000000001',2,'{"state":"completed","evidence":"work","quality_rating":5}')$$,'Independent','Task self-acceptance denied');
-select test.reject($$select public.command('submit_work_log',null,null,'{"task_id":"20000000-0000-0000-0000-000000000001","start_at":"2026-10-13T05:00:00Z","end_at":"2026-10-13T04:00:00Z","description":"Invalid"}')$$,'check constraint','Invalid work interval rejected');
-select public.command('submit_work_log',null,null,'{"task_id":"20000000-0000-0000-0000-000000000001","start_at":"2026-10-13T04:00:00Z","end_at":"2026-10-13T05:00:00Z","description":"Work"}');
-select test.reject($$select public.command('submit_work_log',null,null,'{"task_id":"20000000-0000-0000-0000-000000000001","start_at":"2026-10-13T04:30:00Z","end_at":"2026-10-13T05:30:00Z","description":"Overlap"}')$$,'exclusion constraint','Overlapping work rejected');
+select test.reject($$select public.command('submit_work_log',null,null,jsonb_build_object('task_id','20000000-0000-0000-0000-000000000001','start_at',test.at(3),'end_at',test.at(2),'description','Invalid'))$$,'check constraint','Invalid work interval rejected');
+select public.command('submit_work_log',null,null,jsonb_build_object('task_id','20000000-0000-0000-0000-000000000001','start_at',test.at(1),'end_at',test.at(3),'description','Work'));
+select test.reject($$select public.command('submit_work_log',null,null,jsonb_build_object('task_id','20000000-0000-0000-0000-000000000001','start_at',test.at(2),'end_at',test.at(4),'description','Overlap'))$$,'exclusion constraint','Overlapping work rejected');
+-- Work-log window, edits, leader comments, and any employee as project leader.
+select set_config('test.log_id',(select id::text from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),true);
+select test.assert((select work_date=(now() at time zone (select timezone from public.company_settings))::date from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),'Work log date follows company time');
+select test.reject($$select public.command('submit_work_log',null,null,jsonb_build_object('task_id','20000000-0000-0000-0000-000000000001','start_at',test.at(1)-interval '1 day','end_at',test.at(3)-interval '1 day','description','Yesterday'))$$,'must be for today','A work log for another day is rejected');
+select public.command('edit_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),1,jsonb_build_object('start_at',test.at(1),'end_at',test.at(31),'description','Edited summary'));
+select test.assert((select description='Edited summary' and version=2 and edit_count=1 and status='submitted' from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),'The employee edited their own work log inside the window');
+select test.reject($$select public.command('edit_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),1,jsonb_build_object('start_at',test.at(1),'end_at',test.at(31),'description','Stale'))$$,'Record changed','A stale edit is rejected');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
+select test.reject($$select public.command('edit_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),2,jsonb_build_object('start_at',test.at(1),'end_at',test.at(31),'description','Leader edit'))$$,'your own','The leader cannot edit an employee work log');
+select public.command('comment_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),null,'{"body":"Please add the ticket number."}');
+select test.assert((select count(*)=1 from public.work_log_comments),'The project leader commented on the work log');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
+select test.assert(exists(select 1 from public.notifications where user_id='00000000-0000-0000-0000-000000000003' and title='New comment on a work log'),'The employee is told about the comment');
+select public.command('comment_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),null,'{"body":"Added."}');
+select test.assert((select count(*)=2 from public.work_log_comments),'The employee can reply');
+select test.reject($$insert into public.work_log_comments(work_log_id,author_id,body) values((select id from public.work_logs limit 1),auth.uid(),'direct')$$,'permission denied','Direct comment insert is blocked');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
+select test.assert((select count(*)=0 from public.work_log_comments),'Another employee cannot read the comments');
+select test.reject($$select public.command('comment_work_log',current_setting('test.log_id')::uuid,null,'{"body":"Not mine"}')$$,'Only the employee or the project leader','A stranger cannot comment');
+-- A plain employee can be made project leader and then runs the project.
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
+select public.command('create_project',null,null,'{"leader_id":"00000000-0000-0000-0000-000000000007","name":"Employee led","due_date":"2026-12-01"}');
+select test.assert((select manager_id='00000000-0000-0000-0000-000000000007' from public.projects where name='Employee led'),'A plain employee was made project leader');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
+select public.command('create_task',null,null,jsonb_build_object('project_id',(select id from public.projects where name='Employee led'),'title','Led by employee','assignee_id','00000000-0000-0000-0000-000000000003','acceptance_criteria','Done','weight',3,'due_date','2026-12-01'));
+select test.assert(exists(select 1 from public.tasks where title='Led by employee'),'The employee leader created a task in their project');
+-- Work hours are a CEO setting and close the window.
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
+select test.reject($$select public.command('update_settings',null,(select version from public.company_settings),'{"working_weekdays":[1],"break_minutes":60,"break_paid":false,"work_start":"18:00","work_end":"09:00"}')$$,'after work start','Work end before work start is rejected');
+select public.command('update_settings',null,(select version from public.company_settings),'{"working_weekdays":[0,1,2,3,4,5,6],"break_minutes":60,"break_paid":false,"work_start":"09:00","work_end":"18:00"}');
+select test.assert((select work_start='09:00' and work_end='18:00' from public.company_settings),'The CEO changed the work hours');
+reset role;
+update public.company_settings set work_start='00:00',work_end='00:00:01';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
+select test.reject($$select public.command('submit_work_log',null,null,jsonb_build_object('task_id','20000000-0000-0000-0000-000000000001','start_at',test.at(60),'end_at',test.at(61),'description','Late'))$$,'window is closed','Submitting outside the work hours is rejected');
+select test.reject($$select public.command('edit_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),2,jsonb_build_object('start_at',test.at(1),'end_at',test.at(31),'description','Too late'))$$,'window is closed','Editing after the cutoff is rejected');
+select public.command('comment_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),null,'{"body":"Thanks."}');
+select test.assert((select count(*)=3 from public.work_log_comments),'Comments are still allowed after the cutoff');
+-- A leader can reopen a locked day for an employee, for a limited time.
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',true);
+select test.reject($$select public.command('reopen_work_log',null,null,jsonb_build_object('employee_id','00000000-0000-0000-0000-000000000003','work_date',(select work_day from public.work_log_window()),'reason','Not my project'))$$,'project leader','A stranger cannot reopen a work log');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
+select test.reject($$select public.command('reopen_work_log',null,null,jsonb_build_object('employee_id','00000000-0000-0000-0000-000000000003','work_date',(select work_day from public.work_log_window()),'reason','Myself'))$$,'your own','Nobody can reopen their own work log');
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
+select public.command('reopen_work_log',null,null,jsonb_build_object('employee_id','00000000-0000-0000-0000-000000000003','work_date',(select work_day from public.work_log_window()),'reason','Server outage'));
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
+select test.assert(exists(select 1 from public.notifications where user_id='00000000-0000-0000-0000-000000000003' and title like 'Your work log for % was reopened%'),'The employee is told the day was reopened');
+select public.command('edit_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),2,jsonb_build_object('start_at',test.at(1),'end_at',test.at(31),'description','Edited after reopen'));
+select test.assert((select description='Edited after reopen' from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),'A reopened day can be edited after the cutoff');
+reset role;
+update public.work_log_reopens set expires_at=now()-interval '1 minute';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
+select test.reject($$select public.command('edit_work_log',(select id from public.work_logs where employee_id='00000000-0000-0000-0000-000000000003'),3,jsonb_build_object('start_at',test.at(1),'end_at',test.at(31),'description','After expiry'))$$,'window is closed','An expired reopen closes the day again');
+reset role;
+update public.company_settings set work_start='00:00',work_end='23:59:59';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
 select public.command('submit_leave',null,null,jsonb_build_object('type_id',(select id from public.leave_types where name='Company allowance'),'start_date','2026-10-20','end_date','2026-10-20','reason','Annual leave'));
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
 select public.command('task_transition','20000000-0000-0000-0000-000000000001',2,'{"state":"completed","evidence":"Accepted against criteria","quality_rating":5}');
@@ -166,9 +228,9 @@ select test.assert((select reporter_id='00000000-0000-0000-0000-000000000004' fr
 select test.reject($$select public.command('create_task',null,null,'{"project_id":"10000000-0000-0000-0000-000000000002","title":"Not my project","assignee_id":"00000000-0000-0000-0000-000000000007","acceptance_criteria":"Done","weight":3,"due_date":"2026-10-31"}')$$,'leader who created','Non-manager cannot assign into another project');
 select test.assert((select not exists(select 1 from public.project_members where project_id='10000000-0000-0000-0000-000000000002' and employee_id='00000000-0000-0000-0000-000000000007')),'Rejected assignment does not add a member');
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
-select public.command('submit_work_log',null,null,format('{"task_id":"%s","start_at":"2026-10-14T03:00:00Z","end_at":"2026-10-14T05:00:00Z","description":"Daily work","self_quality_rating":"4.5"}',(select id from public.tasks where title='Assign to new member'))::jsonb);
+select public.command('submit_work_log',null,null,jsonb_build_object('task_id',(select id from public.tasks where title='Assign to new member'),'start_at',test.at(1),'end_at',test.at(3),'description','Daily work','self_quality_rating','4.5'));
 select test.assert((select self_quality_rating=4.5 from public.work_logs where employee_id='00000000-0000-0000-0000-000000000007'),'Worker self quality rating is saved on the work log');
-select test.reject(format($f$select public.command('submit_work_log',null,null,'{"task_id":"%s","start_at":"2026-10-15T03:00:00Z","end_at":"2026-10-15T05:00:00Z","description":"Bad","self_quality_rating":"6"}')$f$,(select id from public.tasks where title='Assign to new member')),'between 0 and 5','Out-of-range quality rating rejected');
+select test.reject(format($f$select public.command('submit_work_log',null,null,jsonb_build_object('task_id','%s','start_at',test.at(1),'end_at',test.at(3),'description','Bad','self_quality_rating','6'))$f$,(select id from public.tasks where title='Assign to new member')),'between 0 and 5','Out-of-range quality rating rejected');
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000007',true);
 select public.command('check_in');
 select public.command('attendance_heartbeat',null,null,'{"device_id":"device-aaaa1","device_label":"Chrome on Windows"}');
@@ -186,8 +248,9 @@ select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004'
 select set_config('request.jwt.claims','{"aal":"aal1","session_id":"aaaaaaaa-0000-0000-0000-000000000001"}',true);
 select public.claim_session(null);
 select test.assert(public.session_is_current(),'First sign-in is the current session');
-select test.assert(not public.mfa_satisfied(),'Privileged session without authenticator is not MFA-satisfied');
-select test.reject($$select public.command('create_project',null,null,'{"leader_id":"00000000-0000-0000-0000-000000000004","name":"Needs MFA","due_date":"2026-12-01"}')$$,'MFA required','Privileged command needs MFA without a trusted device');
+select test.assert(public.mfa_satisfied(),'No authenticator code is required');
+select public.command('create_project',null,null,'{"leader_id":"00000000-0000-0000-0000-000000000004","name":"No MFA needed","due_date":"2026-12-01"}');
+select test.assert(exists(select 1 from public.projects where name='No MFA needed'),'A privileged command runs without an authenticator code');
 select set_config('request.jwt.claims','{"aal":"aal1","session_id":"aaaaaaaa-0000-0000-0000-000000000002"}',true);
 select public.claim_session(null);
 select test.assert(public.session_is_current(),'Second sign-in becomes the current session');
@@ -205,14 +268,14 @@ select public.command('create_project',null,null,'{"leader_id":"00000000-0000-00
 select test.assert(exists(select 1 from public.projects where name='Trusted device project'),'Trusted-device session can run privileged commands');
 select set_config('request.jwt.claims','{"aal":"aal1","session_id":"aaaaaaaa-0000-0000-0000-000000000004"}',true);
 select public.claim_session(repeat('b',64));
-select test.assert(not public.mfa_satisfied(),'Unknown device token is not trusted');
+select test.assert(public.mfa_satisfied(),'An unknown device needs no authenticator code');
 select set_config('request.jwt.claims','{"aal":"aal1","session_id":"aaaaaaaa-0000-0000-0000-000000000005"}',true);
 select public.claim_session(repeat('a',64));
 select public.revoke_trusted_devices();
-select test.assert(not public.mfa_satisfied(),'Revoking forgets trusted devices');
+select test.assert(public.mfa_satisfied(),'Revoking devices does not lock anyone out');
 select set_config('request.jwt.claims','{"aal":"aal1","session_id":"aaaaaaaa-0000-0000-0000-000000000006"}',true);
 select public.claim_session(repeat('a',64));
-select test.assert(not public.mfa_satisfied(),'Revoked device token no longer works');
+select test.assert(public.mfa_satisfied(),'A revoked device still signs in normally');
 -- Multi-person tasks and task deletion.
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
 select set_config('request.jwt.claims','{"aal":"aal2","session_id":"aaaaaaaa-0000-0000-0000-000000000006"}',true);
@@ -257,6 +320,11 @@ select test.assert((select active_seconds=(select n from t_before)+55 from publi
 update public.agent_devices set last_seen_at=now()-interval '30 seconds';
 select test.assert((public.agent_heartbeat((select r->>'token' from t_pair),'{"state":"idle","active_seconds":0,"input_idle_seconds":900}')->>'credited')::integer=0,'Idle report credits nothing');
 select test.assert((select state='idle' and foreground_app='' from public.agent_status),'Latest agent state is stored');
+update public.agent_devices set last_seen_at=now()-interval '30 seconds';
+select test.assert((public.agent_heartbeat((select r->>'token' from t_pair),'{"state":"active","active_seconds":30,"cpu_percent":4,"input_idle_seconds":600}')->>'credited')::integer=0,'Window or memory changes without input are not work');
+update public.agent_devices set last_seen_at=now()-interval '30 seconds';
+select test.assert((public.agent_heartbeat((select r->>'token' from t_pair),'{"state":"active","active_seconds":30,"cpu_percent":80,"input_idle_seconds":2400}')->>'credited')::integer=0,'Nothing counts after 30 minutes without input, even under load');
+select test.assert((select state='idle' from public.agent_status),'The stored state follows the server rule');
 select test.assert((public.command('attendance_heartbeat',null,null,'{"device_id":"device-zzzz1"}')->>'agent')::boolean,'Browser heartbeat is ignored while the agent reports');
 select test.assert((select active_seconds=(select n from t_before)+55 from public.attendance where employee_id='00000000-0000-0000-0000-000000000007'),'Browser time is not added on top of agent time');
 select test.assert(has_function_privilege('anon','public.agent_heartbeat(text,jsonb)','EXECUTE') and not has_function_privilege('anon','public.agent_hash(text)','EXECUTE'),'Agent functions are callable without a session, helpers are not');
@@ -275,7 +343,7 @@ select test.reject($$select public.command('create_task',null,null,'{"project_id
 -- Project leader chosen at creation, and task visibility.
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
 select set_config('request.jwt.claims','{"aal":"aal2","session_id":"aaaaaaaa-0000-0000-0000-000000000006"}',true);
-select test.reject($$select public.command('create_project',null,null,'{"leader_id":"00000000-0000-0000-0000-000000000007","name":"Bad leader","due_date":"2026-12-01"}')$$,'active manager','A plain employee cannot be chosen as project leader');
+select test.reject($$select public.command('create_project',null,null,'{"leader_id":"00000000-0000-0000-0000-0000000000ff","name":"Bad leader","due_date":"2026-12-01"}')$$,'active manager','Someone who is not an active employee cannot be chosen as project leader');
 select test.reject($$select public.command('create_project',null,null,'{"name":"No leader","due_date":"2026-12-01"}')$$,'Choose the project leader','Project creation needs a leader');
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
 select set_config('request.jwt.claims','{"aal":"aal2"}',true);
@@ -345,7 +413,7 @@ select test.assert((public.agent_heartbeat((select r->>'token' from t_pair2),jso
 -- Changing a project's leader, and deleting a project.
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
 select set_config('request.jwt.claims','{"aal":"aal2","session_id":"aaaaaaaa-0000-0000-0000-000000000006"}',true);
-select test.reject($$select public.command('set_project_leader',(select id from public.projects where name='CEO assigned'),(select version from public.projects where name='CEO assigned'),'{"leader_id":"00000000-0000-0000-0000-000000000007"}')$$,'active manager','Only a manager can become project leader');
+select test.reject($$select public.command('set_project_leader',(select id from public.projects where name='CEO assigned'),(select version from public.projects where name='CEO assigned'),'{"leader_id":"00000000-0000-0000-0000-0000000000ff"}')$$,'active manager','Only an active employee can become project leader');
 select test.reject($$select public.command('set_project_leader',(select id from public.projects where name='CEO assigned'),(select version from public.projects where name='CEO assigned'),'{"leader_id":"00000000-0000-0000-0000-000000000004"}')$$,'already the project leader','Choosing the current leader is refused');
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',true);
 select set_config('request.jwt.claims','{"aal":"aal2"}',true);

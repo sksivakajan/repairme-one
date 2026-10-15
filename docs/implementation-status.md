@@ -66,3 +66,28 @@ Applied the user's original RepairMe logo to portal navigation and authenticatio
 ## Hosted testing deployment
 
 Published 13 October 2026 on Netlify: https://extraordinary-semolina-40421d.netlify.app. Linux source build with explicit Next.js adapter passed. Public login and logo load; fixture previews are blocked; protected dashboard redirects to login and unauthenticated commands return 401. Browser reports no page errors. Supabase hosted auth URL confirmation and live account recovery/MFA tests remain pending. See `docs/hosted-deployment.json`.
+
+## Work-log window, leader comments and any-employee leaders (15 October 2026)
+
+Migration `202610130019_work_log_window_and_comments.sql` (apply to an installed project in the Supabase SQL Editor; the new-project installer already includes it).
+
+- **Daily window.** Work logs can be submitted and edited only between the company work start and work end (default 09:00 to 18:00 in the company time zone, on configured working weekdays). A log must be for today. After the end time it is locked. Enforced in the database, not only on screen.
+- **Editing.** The employee can edit their own log for today until the cutoff. The previous values are kept in the audit trail and the log returns to the leader as submitted.
+- **Comments.** The project leader (or CEO) can comment on any log of the project; the employee can reply. Comments are immutable, still allowed after the cutoff, and notify the other person.
+- **Changing the times.** The CEO sets the work start and end under Settings. The migration changes the default end from 17:00 to 18:00 and updates the existing row if it still holds 17:00.
+- **Project leaders.** Any active employee can be project leader (previously managers and the CEO only). Leader powers still come only from the project's leader field.
+- **Tests.** `supabase/tests/security-and-workflows.sql` now has 452 assertions. It sets every day as a working day with an all-day window so the suite does not depend on when it runs; the new assertions cover the window, edits, comments and employee leaders. Two old assertions that required leaders to be managers were changed to match the new rule.
+
+## MFA removed, work-log dates and PDF, agent idle fix (15 October 2026)
+
+Migration `202610130020_remove_mfa_and_idle_guard.sql` (apply after 019).
+
+- **MFA removed.** Sign-in is email and password only. The authenticator pages, enrollment route and "remember this device" cookie are gone, and the database no longer asks for MFA. The one-active-session rule remains. Older sections of this document, `permissions.md`, `workflows.md` and `provider-verification.md` that describe MFA are historical. Anyone who enrolled an authenticator in Supabase can ignore it.
+- **Work logs by date.** Work Logs has a From/To date picker (Today, Yesterday, Last 7 days, All dates). The dates are read from the database, so any day can be viewed, not only the latest 100 logs.
+- **PDF export.** Work Logs and Tasks have a PDF button. Status cells use the portal colours: waiting yellow, in progress blue, approved or completed green, rejected or overdue red. Work-log PDFs include the latest leader comment. The PDF is generated in the browser by `src/lib/pdf.ts`.
+- **Agent time stopping.** Time kept counting while a person was away because a changing window or memory use counted as work. Now, after 5 minutes without keyboard or mouse only sustained heavy CPU counts, and after 30 minutes nothing counts. The database enforces this for every agent version, so computers that already have the old agent are fixed without reinstalling. The on-screen work-time clock also stops after check-out. A rebuilt installer (`agent/build.bat`) carries the same rule on the computer itself.
+- Verification: 455 database assertions, 39 unit tests, 29 agent tests, 15 browser tests, lint, strict types and build pass.
+
+## Leader reopen of a locked work log (15 October 2026)
+
+Migration `202610130021_work_log_reopen.sql`. A project leader or the CEO can reopen a day (up to 7 days back) for an employee of their project from Work Logs ("Reopen" next to anyone missing a log, or "Reopen for editing" on a log). The employee may then submit and edit that day's log for 4 hours. A reason is required, the employee is notified, and it is audited. Nobody can reopen their own log. Database tests: 465 assertions.

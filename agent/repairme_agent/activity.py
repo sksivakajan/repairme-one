@@ -9,11 +9,11 @@ SAMPLE_SECONDS = 5  # how often the PC is looked at
 SLEEP_GAP_SECONDS = 30  # a longer gap between two looks means the PC slept or the app was paused
 MAX_COUNTED_STEP = SAMPLE_SECONDS * 3
 RECENT_INPUT_SECONDS = 300  # keyboard or mouse used in the last 5 minutes means someone is at the PC
-WINDOW_SAMPLES = 60  # the "is the PC stable?" window is the last 5 minutes
+MAX_NO_INPUT_SECONDS = 1800  # after 30 minutes without keyboard or mouse nothing counts, whatever the PC is doing
+WINDOW_SAMPLES = 60  # the "is the PC busy?" window is the last 5 minutes
 MIN_WINDOW_SAMPLES = 36  # at least 3 minutes of looks before the PC can be judged
 BUSY_CPU_MEAN = 20.0  # sustained, changing load (building, rendering) counts as work without input
 BUSY_CPU_STDEV = 3.0
-RAM_CHANGE_POINTS = 5.0  # memory use moving by this many percentage points is not stable
 
 
 @dataclass
@@ -60,19 +60,16 @@ class ActivityTracker:
             return 'locked'
         if sample.input_idle <= RECENT_INPUT_SECONDS:
             return 'active'
-        return 'active' if self.unstable() else 'idle'
+        if sample.input_idle > MAX_NO_INPUT_SECONDS:
+            return 'idle'  # someone left: a background program or a changing window is not work
+        return 'active' if self.busy() else 'idle'
 
-    def unstable(self) -> bool:
-        """True when, with no recent input, the PC is still visibly changing (so it is doing real work)."""
+    def busy(self) -> bool:
+        """True when, with no recent input, the PC is under sustained heavy load (a build or a render)."""
         if len(self.window) < MIN_WINDOW_SAMPLES:
             return False
         cpu = [s.cpu for s in self.window]
-        ram = [s.ram for s in self.window]
-        if len({s.foreground for s in self.window}) > 1:
-            return True
-        if sum(cpu) / len(cpu) >= BUSY_CPU_MEAN and pstdev(cpu) >= BUSY_CPU_STDEV:
-            return True
-        return max(ram) - min(ram) >= RAM_CHANGE_POINTS
+        return sum(cpu) / len(cpu) >= BUSY_CPU_MEAN and pstdev(cpu) >= BUSY_CPU_STDEV
 
     def take(self) -> tuple[int, int]:
         """Whole seconds counted since the last call; the fractional rest is kept for next time."""

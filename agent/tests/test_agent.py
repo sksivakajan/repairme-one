@@ -59,11 +59,26 @@ class ActivityRules(unittest.TestCase):
         self.assertEqual(t.state, 'active')
         self.assertGreater(t.take()[0], 400)
 
-    def test_foreground_change_without_input_is_not_stable(self):
+    def test_foreground_change_without_input_is_not_work(self):
         t = ActivityTracker()
         for i in range(60):
             t.feed(sample(5 * (i + 1), idle=900, app='a.exe' if i < 30 else 'b.exe'))
-        self.assertEqual(t.state, 'active')
+        self.assertEqual(t.state, 'idle')
+        self.assertEqual(t.take()[0], 0)
+
+    def test_memory_drift_without_input_is_not_work(self):
+        t = ActivityTracker()
+        for i in range(120):
+            t.feed(sample(5 * (i + 1), idle=900, ram=40.0 + i * 0.2))
+        self.assertEqual(t.state, 'idle')
+        self.assertEqual(t.take()[0], 0)
+
+    def test_nothing_counts_after_thirty_minutes_without_input(self):
+        t = ActivityTracker()
+        for i in range(120):  # heavy load, but nobody has touched the PC for 40 minutes
+            t.feed(sample(5 * (i + 1), cpu=70 if i % 2 else 40, idle=2400))
+        self.assertEqual(t.state, 'idle')
+        self.assertEqual(t.take()[0], 0)
 
     def test_locked_screen_is_not_work(self):
         t = ActivityTracker()

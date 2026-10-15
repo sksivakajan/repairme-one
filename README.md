@@ -55,7 +55,7 @@ The concurrency and recovery scripts create separate test databases. Recovery co
 - `src/app/api`: origin-checked, identity-validated command, invitation, and document routes.
 - `src/lib/supabase`: supported cookie-based SSR clients and generated database types.
 - `src/lib/permissions`, `validation`, `workflows`: role boundaries, Zod validation, deterministic rules.
-- `supabase/migrations`: nine ordered, locally executed migrations; 42 domain tables.
+- `supabase/migrations`: nineteen ordered, locally executed migrations.
 - `supabase/tests`: RLS, transactional workflows, immutable records, and disabled-session tests.
 - `tests/unit`, `tests/e2e`: formula/rule tests and browser checks.
 

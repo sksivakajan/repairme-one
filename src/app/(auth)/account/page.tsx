@@ -7,6 +7,5 @@ export default async function Account() {
   if (!isConfigured()) return <AuthForm mode="password" configured={false} />;
   const user = await identity();
   if (!user) redirect('/recovery?error=invalid_link');
-  if (user.needsMfa) redirect('/mfa?next=/account');
   return <AuthForm mode="password" configured />;
 }

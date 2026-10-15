@@ -5,8 +5,20 @@ import { isConfigured, serverClient } from '@/lib/supabase/server';
 import { identity } from '@/lib/supabase/identity';
 import { fixtures } from '@/features/fixtures';
 export const dynamic = 'force-dynamic';
-export default async function Page({ params }: { params: Promise<{ section: string }> }) {
+export default async function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ section: string }>;
+  searchParams: Promise<{ from?: string; to?: string }>;
+}) {
   const { section } = await params;
+  const range = await searchParams;
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  const logRange =
+    section === 'work-logs' && range.from && range.to && day.test(range.from) && day.test(range.to)
+      ? { from: range.from, to: range.to }
+      : undefined;
   if (!sections.includes(section as (typeof sections)[number])) notFound();
   if (!isConfigured()) {
     if (process.env.NODE_ENV === 'production' || process.env.ENABLE_FIXTURE_PREVIEW === 'false')
@@ -28,7 +40,6 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   }
   const user = await identity();
   if (!user) redirect('/login');
-  if (user.needsMfa) redirect('/mfa');
   if (section === 'dashboard' && !user.roles.includes('ceo')) {
     redirect(
       user.roles.includes('hr')
@@ -66,10 +77,8 @@ export default async function Page({ params }: { params: Promise<{ section: stri
           : undefined,
       }
     : undefined;
-  // Managers and the CEO can pick or change a project leader from any page that shows a project.
-  const leaderRows = user.roles.some((r) => r === 'ceo' || r === 'manager')
-    ? ((await db.rpc('leader_candidates')).data ?? [])
-    : [];
+  // Managers, the CEO and current project leaders can pick or change a project leader. The database decides who may ask.
+  const leaderRows = (await db.rpc('leader_candidates')).data ?? [];
   const [
     employees,
     projects,
@@ -77,6 +86,8 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     expenses,
     leave,
     logs,
+    workLogComments,
+    workLogReopens,
     attendance,
     attendanceDevices,
     agentDevices,
@@ -109,6 +120,8 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         'expenses',
         'leave_requests',
         'work_logs',
+        'work_log_comments',
+        'work_log_reopens',
         'attendance',
         'attendance_devices',
         'agent_devices',
@@ -138,8 +151,23 @@ export default async function Page({ params }: { params: Promise<{ section: stri
       const result = await (
         t === 'attendance'
           ? query.order('day', { ascending: false }).order('check_in', { ascending: false })
-          : query
-      ).limit(t === 'attendance' ? 300 : 100);
+          : t === 'work_logs'
+            ? (logRange
+                ? query.gte('work_date', logRange.from).lte('work_date', logRange.to)
+                : query
+              ).order('start_at', { ascending: false })
+            : t === 'work_log_comments'
+              ? query.order('created_at')
+              : query
+      ).limit(
+        t === 'attendance'
+          ? 300
+          : t === 'work_log_comments'
+            ? 1000
+            : t === 'work_logs' && logRange
+              ? 500
+              : 100,
+      );
       return {
         ...result,
         table: t,
@@ -164,6 +192,8 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     expenses,
     leave,
     logs,
+    workLogComments,
+    workLogReopens,
     attendance,
     attendanceDevices,
     agentDevices,
@@ -189,7 +219,13 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     releases,
   ];
   // Tables added by the newest migrations are optional, so the portal still opens before they are applied.
-  const optional = ['attendance_devices', 'agent_devices', 'agent_status'];
+  const optional = [
+    'attendance_devices',
+    'agent_devices',
+    'agent_status',
+    'work_log_comments',
+    'work_log_reopens',
+  ];
   const failed = results.filter((r) => r.error && !optional.includes(r.table));
   if (failed.length)
     return (
@@ -207,6 +243,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
       section={section}
       preview={false}
       ticketData={ticketData}
+      logRange={logRange}
       user={user}
       data={{
         employees: employees.data ?? [],
@@ -215,6 +252,8 @@ export default async function Page({ params }: { params: Promise<{ section: stri
         expenses: expenses.data ?? [],
         leave: leave.data ?? [],
         logs: logs.data ?? [],
+        workLogComments: workLogComments.data ?? [],
+        workLogReopens: workLogReopens.data ?? [],
         attendance: attendance.data ?? [],
         attendanceDevices: attendanceDevices.data ?? [],
         agentDevices: agentDevices.data ?? [],

@@ -14,10 +14,5 @@ export async function identity() {
   if (!employee || !['active', 'onboarding'].includes(employee.status)) return null;
   const { data: assigned } = await db.from('user_roles').select('role').eq('user_id', employee.id);
   const userRoles = (assigned ?? []).map((r) => r.role as Role);
-  if (userRoles.some((r) => ['ceo', 'admin', 'hr', 'finance', 'manager'].includes(r))) {
-    // Satisfied by a verified authenticator in this session, or a remembered device.
-    const { data: satisfied } = await db.rpc('mfa_satisfied');
-    if (!satisfied) return { ...employee, roles: userRoles, needsMfa: true };
-  }
-  return { ...employee, roles: userRoles, needsMfa: false };
+  return { ...employee, roles: userRoles };
 }

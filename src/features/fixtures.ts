@@ -6,6 +6,8 @@ export type PortalData = Record<
   | 'expenses'
   | 'leave'
   | 'logs'
+  | 'workLogComments'
+  | 'workLogReopens'
   | 'attendance'
   | 'attendanceDevices'
   | 'agentDevices'
@@ -381,6 +383,8 @@ export const fixtures: PortalData = {
       version: 2,
     },
   ],
+  workLogComments: [],
+  workLogReopens: [],
   logs: [
     {
       id: 'w1',

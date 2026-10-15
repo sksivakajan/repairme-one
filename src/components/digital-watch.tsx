@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Clock } from 'lucide-react';
-const FRESH_MS = 150000;
+const FRESH_MS = 100000; // the agent reports every 30 seconds
 type Mode = 'running' | 'idle' | 'locked' | 'break' | 'offline';
 const labels: Record<Mode, string> = {
   running: 'Running',
@@ -40,6 +40,8 @@ export function DigitalWatch({
   useEffect(() => {
     const evaluate = (): Mode => {
       if (onBreak) return 'break';
+      // The server only adds time to an open attendance record, so the clock never runs after check-out.
+      if (!checkedIn) return 'offline';
       if (agentUpdatedAt && Date.now() - Date.parse(agentUpdatedAt) < FRESH_MS)
         return agentState === 'active'
           ? 'running'
@@ -48,7 +50,7 @@ export function DigitalWatch({
             : agentState === 'break'
               ? 'break'
               : 'idle';
-      return checkedIn && document.visibilityState === 'visible' ? 'running' : 'offline';
+      return document.visibilityState === 'visible' ? 'running' : 'offline';
     };
     const id = setInterval(() => {
       const next = evaluate();

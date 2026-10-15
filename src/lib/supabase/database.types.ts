@@ -1687,6 +1687,60 @@ export type Database = { public: { Tables: {
     };
     Relationships: [];
   };
+  work_log_reopens: {
+    Row: {
+      id: string;
+      employee_id: string;
+      work_date: string;
+      opened_by: string;
+      reason: string;
+      expires_at: string;
+      created_at: string;
+    };
+    Insert: {
+      id?: string;
+      employee_id: string;
+      work_date: string;
+      opened_by: string;
+      reason: string;
+      expires_at: string;
+      created_at?: string;
+    };
+    Update: {
+      id?: string;
+      employee_id?: string;
+      work_date?: string;
+      opened_by?: string;
+      reason?: string;
+      expires_at?: string;
+      created_at?: string;
+    };
+    Relationships: [];
+  };
+  work_log_comments: {
+    Row: {
+      id: string;
+      work_log_id: string;
+      author_id: string;
+      body: string;
+      created_at: string;
+    };
+    Insert: {
+      id?: string;
+      work_log_id: string;
+      author_id: string;
+      body: string;
+      created_at?: string;
+    };
+    Update: {
+      id?: string;
+      work_log_id?: string;
+      author_id?: string;
+      body?: string;
+      created_at?: string;
+    };
+    Relationships: [];
+  };
   work_logs: {
     Row: {
       id: string;
@@ -1700,6 +1754,9 @@ export type Database = { public: { Tables: {
       review_reason: string | null;
       version: number;
       self_quality_rating: number | null;
+      work_date: string;
+      edited_at: string | null;
+      edit_count: number;
     };
     Insert: {
       id?: string;
@@ -1713,6 +1770,9 @@ export type Database = { public: { Tables: {
       review_reason?: string | null;
       version?: number;
       self_quality_rating?: number | null;
+      work_date?: string;
+      edited_at?: string | null;
+      edit_count?: number;
     };
     Update: {
       id?: string;
@@ -1726,6 +1786,9 @@ export type Database = { public: { Tables: {
       review_reason?: string | null;
       version?: number;
       self_quality_rating?: number | null;
+      work_date?: string;
+      edited_at?: string | null;
+      edit_count?: number;
     };
     Relationships: [];
   };
@@ -1753,6 +1816,7 @@ export type Database = { public: { Tables: {
 }; Views: { [_ in never]: never }; Functions: {
 provision_employee: { Args: {user_id: string;email: string;first_name: string;last_name: string;employee_number: string;department: string;job_title: string; }; Returns: string };
 session_is_current: { Args: Record<PropertyKey, never>; Returns: boolean };
+work_log_window: { Args: Record<PropertyKey, never>; Returns: { is_open: boolean; work_day: string; opens: string; closes: string }[] };
 mfa_satisfied: { Args: Record<PropertyKey, never>; Returns: boolean };
 leader_candidates: { Args: {id: string; }; Returns: { id: string }[] };
 prepare_document: { Args: {file_name: string;file_type: string;file_size: number;classification: string;project_id?: string | null; }; Returns: Json };

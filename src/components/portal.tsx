@@ -50,6 +50,7 @@ import type { PortalData, Row } from '@/features/fixtures';
 import { ticketFixtures } from '@/features/ticket-fixtures';
 import { AWAY_AFTER_MS, deviceId, deviceLabel, formatDuration } from '@/lib/attendance';
 import { DigitalWatch } from '@/components/digital-watch';
+import { buildPdf, statusCell, type PdfCell } from '@/lib/pdf';
 import { WorkBreak } from '@/components/work-break';
 import { DesktopBridge } from '@/components/desktop-bridge';
 import { Ticketing, type TicketData } from '@/components/ticketing';
@@ -192,12 +193,14 @@ export function Portal({
   ticketData = { tickets: [], comments: [], events: [] },
   data,
   user,
+  logRange,
 }: {
   section: string;
   preview: boolean;
   previewPath?: boolean;
   ticketData?: TicketData;
   data: PortalData;
+  logRange?: { from: string; to: string };
   user: { id: string; first_name: string; last_name: string; job_title: string; roles: Role[] };
 }) {
   useEffect(() => {
@@ -234,6 +237,9 @@ export function Portal({
   const [filter, setFilter] = useState('all');
   const [view, setView] = useState('board');
   const [page, setPage] = useState(1);
+  const [, setTick] = useState(0);
+  const [logFrom, setLogFrom] = useState(logRange?.from ?? '');
+  const [logTo, setLogTo] = useState(logRange?.to ?? '');
   const name = user.first_name + ' ' + user.last_name;
   const openAttendance =
     !preview && data.attendance.some((a) => text(a, 'employee_id') === user.id && !a.check_out);
@@ -266,6 +272,11 @@ export function Portal({
     };
   }, [openAttendance, router]);
   useEffect(() => {
+    if (section !== 'work-logs') return;
+    const timer = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(timer);
+  }, [section]);
+  useEffect(() => {
     if (section !== 'attendance' || preview) return;
     const timer = setInterval(() => router.refresh(), 120000);
     return () => clearInterval(timer);
@@ -277,6 +288,63 @@ export function Portal({
   const colomboDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo' }).format(
     new Date(),
   );
+  // Work-log window (company time). The database enforces it; this only explains it on screen.
+  const companySettings = data.settings[0] ?? { id: '' };
+  const companyTz = text(companySettings, 'timezone') || 'Asia/Colombo';
+  const workStart = (text(companySettings, 'work_start') || '09:00').slice(0, 5);
+  const workEnd = (text(companySettings, 'work_end') || '18:00').slice(0, 5);
+  const time12 = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+  };
+  const workDay = new Intl.DateTimeFormat('en-CA', { timeZone: companyTz }).format(new Date());
+  const nowHm = new Intl.DateTimeFormat('en-GB', {
+    timeZone: companyTz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date());
+  const workDays = (companySettings.working_weekdays as number[] | undefined) ?? [];
+  const logWindowOpen =
+    nowHm >= workStart &&
+    nowHm < workEnd &&
+    (!workDays.length || workDays.includes(new Date(`${workDay}T00:00:00Z`).getUTCDay()));
+  // A leader can reopen a locked day for a few hours. These are the reopens that still apply to this person.
+  const myReopens = data.workLogReopens.filter(
+    (r) => text(r, 'employee_id') === user.id && Date.parse(text(r, 'expires_at')) > Date.now(),
+  );
+  const toLocalInput = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const dayShift = (days: number) =>
+    new Date(Date.parse(`${workDay}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+  const logDay = (w: Row) => text(w, 'work_date') || text(w, 'start_at').slice(0, 10);
+  // A single date shows that day only; two dates show everything between them.
+  const applyRange = (from: string, to: string) => {
+    const a = from || to;
+    const b = to || from;
+    const [lo, hi] = a && b && a > b ? [b, a] : [a, b];
+    setLogFrom(lo);
+    setLogTo(hi);
+    if (!preview) router.push(lo ? `/work-logs?from=${lo}&to=${hi}` : '/work-logs');
+  };
+  const rangeText = logFrom
+    ? logFrom === logTo
+      ? logFrom
+      : `${logFrom} to ${logTo}`
+    : 'All loaded dates';
+  const downloadPdf = (name: string, report: Parameters<typeof buildPdf>[0]) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(
+      new Blob([buildPdf(report) as unknown as BlobPart], { type: 'application/pdf' }),
+    );
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const stamp = () => new Date().toLocaleString('en-GB', { timeZone: companyTz });
   const ownAttendance = data.attendance.filter((a) => text(a, 'employee_id') === user.id);
   const todayRecord = ownAttendance.find((a) => text(a, 'day') === colomboDay || !a.check_out);
   const canSeeTeam = preview || user.roles.some((r) => ['ceo', 'hr', 'manager'].includes(r));
@@ -401,11 +469,77 @@ export function Portal({
     state === 'overdue' ? isOverdue(t) : text(t, 'status') === state && !isOverdue(t);
   const groupMates = (t: Row) =>
     t.group_id ? data.tasks.filter((o) => o.group_id === t.group_id && o.id !== t.id) : [];
-  const canManageTasks = user.roles.some((r) => r === 'ceo' || r === 'manager');
+  const canManageTasks =
+    user.roles.some((r) => r === 'ceo' || r === 'manager') ||
+    data.projects.some((p) => text(p, 'manager_id') === user.id);
   const filtered = (rows: Row[]) =>
     rows.filter((r) =>
       Object.values(r).some((v) => String(v).toLowerCase().includes(query.toLowerCase())),
     );
+  const shownLogs = filtered(data.logs).filter(
+    (w) => (!logFrom || logDay(w) >= logFrom) && (!logTo || logDay(w) <= logTo),
+  );
+  function exportPdf() {
+    if (section === 'work-logs') {
+      const counts: Record<string, number> = {};
+      shownLogs.forEach((w) => (counts[text(w, 'status')] = (counts[text(w, 'status')] ?? 0) + 1));
+      downloadPdf(
+        `repairme-work-logs-${logFrom || 'all'}${logTo && logTo !== logFrom ? `-to-${logTo}` : ''}.pdf`,
+        {
+          title: 'Work logs',
+          subtitle: `${rangeText}  |  ${shownLogs.length} logs  |  ${Object.entries(counts)
+            .map(([k, n]) => `${statusCell(k).text} ${n}`)
+            .join(', ')}  |  Generated ${stamp()}`,
+          columns: [
+            { title: 'Date', width: 62 },
+            { title: 'Employee', width: 92 },
+            { title: 'Task', width: 110 },
+            { title: 'Work summary', width: 240 },
+            { title: 'Hours', width: 38 },
+            { title: 'Status', width: 62 },
+            { title: 'Latest comment', width: 190 },
+          ],
+          rows: shownLogs.map((w): (PdfCell | string)[] => {
+            const comments = data.workLogComments.filter((c) => text(c, 'work_log_id') === w.id);
+            const last = comments[comments.length - 1];
+            return [
+              logDay(w),
+              employeeName(text(w, 'employee_id')),
+              text(data.tasks.find((t) => t.id === text(w, 'task_id')) ?? { id: '' }, 'title'),
+              text(w, 'description') + (num(w, 'edit_count') > 0 ? ' (edited)' : ''),
+              ((Date.parse(text(w, 'end_at')) - Date.parse(text(w, 'start_at'))) / 3600000).toFixed(
+                1,
+              ),
+              statusCell(text(w, 'status')),
+              last ? `${employeeName(text(last, 'author_id'))}: ${text(last, 'body')}` : '',
+            ];
+          }),
+        },
+      );
+      return;
+    }
+    const rows = filtered(mine);
+    downloadPdf('repairme-tasks.pdf', {
+      title: 'Tasks',
+      subtitle: `${rows.length} tasks  |  Generated ${stamp()}`,
+      columns: [
+        { title: 'Task', width: 220 },
+        { title: 'Project', width: 130 },
+        { title: 'Assignee', width: 110 },
+        { title: 'Due', width: 70 },
+        { title: 'Priority', width: 60 },
+        { title: 'Status', width: 80 },
+      ],
+      rows: rows.map((t): (PdfCell | string)[] => [
+        text(t, 'title'),
+        projectName(text(t, 'project_id')),
+        text(t, 'assignee_id') ? employeeName(text(t, 'assignee_id')) : '',
+        text(t, 'due_date'),
+        label(text(t, 'priority')),
+        statusCell(isOverdue(t) ? 'overdue' : text(t, 'status')),
+      ]),
+    });
+  }
   const today = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
     day: 'numeric',
@@ -1082,6 +1216,12 @@ export function Portal({
                     <Download size={15} />
                     Export
                   </button>
+                  {['tasks', 'work-logs'].includes(section) && (
+                    <button className="button outline" onClick={exportPdf}>
+                      <FileText size={15} />
+                      PDF
+                    </button>
+                  )}
                   <button
                     className="button yellow"
                     onClick={() =>
@@ -1911,64 +2051,214 @@ export function Portal({
             </>
           )}
           {section === 'work-logs' && (
-            <Panel
-              title="Team timesheets"
-              action={<span className="subtle">Duration is calculated from timestamps</span>}
-            >
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Task</th>
-                      <th>Work description</th>
-                      <th>Duration</th>
-                      <th>Self quality</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered(data.logs).map((w) => (
-                      <tr key={w.id}>
-                        <td>{employeeName(text(w, 'employee_id'))}</td>
-                        <td>
-                          {text(
-                            data.tasks.find((t) => t.id === text(w, 'task_id')) ?? { id: '' },
-                            'title',
-                          )}
-                        </td>
-                        <td>{text(w, 'description')}</td>
-                        <td>
-                          {(
-                            (Date.parse(text(w, 'end_at')) - Date.parse(text(w, 'start_at'))) /
-                            3600000
-                          ).toFixed(1)}{' '}
-                          h
-                        </td>
-                        <td>
-                          {w.self_quality_rating == null
-                            ? '—'
-                            : `${num(w, 'self_quality_rating')} / 5`}
-                        </td>
-                        <td>
-                          <Badge value={text(w, 'status')} />
-                        </td>
-                        <td>
-                          <button
-                            className="button outline small-button"
-                            onClick={() => open('log-detail', w)}
-                          >
-                            Review
-                          </button>
-                        </td>
+            <>
+              <Panel
+                title="Daily work log"
+                action={
+                  <span className={`badge ${logWindowOpen ? 'approved' : 'draft'}`}>
+                    {logWindowOpen ? 'Window open' : 'Window closed'}
+                  </span>
+                }
+              >
+                <p className="info-block">
+                  <Clock size={19} />
+                  Submit your work log between {time12(workStart)} and {time12(workEnd)} (
+                  {companyTz}). You can edit it until {time12(workEnd)}. After that it is locked,
+                  and your project leader reviews it and can comment.
+                </p>
+                {myReopens.map((r) => (
+                  <p key={r.id} className="info-block">
+                    <Clock size={19} />
+                    Your leader reopened {text(r, 'work_date')} for you until{' '}
+                    {new Date(text(r, 'expires_at')).toLocaleTimeString('en-GB', {
+                      timeZone: companyTz,
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    . Reason: {text(r, 'reason')}
+                  </p>
+                ))}
+                {(() => {
+                  const mineToday = data.logs.filter(
+                    (w) => text(w, 'employee_id') === user.id && text(w, 'work_date') === workDay,
+                  );
+                  const hasTasks = data.tasks.some((t) => text(t, 'assignee_id') === user.id);
+                  const ledProjects = data.projects
+                    .filter((p) => user.roles.includes('ceo') || text(p, 'manager_id') === user.id)
+                    .map((p) => p.id);
+                  const expected = [
+                    ...new Set(
+                      data.tasks
+                        .filter(
+                          (t) =>
+                            ledProjects.includes(text(t, 'project_id')) &&
+                            text(t, 'assignee_id') &&
+                            text(t, 'assignee_id') !== user.id &&
+                            !['completed', 'cancelled'].includes(text(t, 'status')),
+                        )
+                        .map((t) => text(t, 'assignee_id')),
+                    ),
+                  ];
+                  const missing = expected.filter(
+                    (id) =>
+                      !data.logs.some(
+                        (w) => text(w, 'employee_id') === id && text(w, 'work_date') === workDay,
+                      ),
+                  );
+                  return (
+                    <>
+                      {hasTasks && (
+                        <p>
+                          <strong>Your log for today:</strong>{' '}
+                          {mineToday.length
+                            ? `Submitted (${mineToday.length}). ${logWindowOpen ? 'You can still edit it.' : 'It is locked.'}`
+                            : logWindowOpen
+                              ? `Not submitted yet. Submit before ${time12(workEnd)}.`
+                              : 'Not submitted. The window is closed.'}
+                        </p>
+                      )}
+                      {!preview && ledProjects.length > 0 && (
+                        <p>
+                          <strong>Team members without a log today:</strong>{' '}
+                          {missing.length
+                            ? missing.map((id) => (
+                                <span key={id} className="missing-person">
+                                  {employeeName(id)}
+                                  {!logWindowOpen && (
+                                    <button
+                                      className="button outline small-button"
+                                      onClick={() =>
+                                        open('work-log-reopen', { id, work_date: workDay })
+                                      }
+                                    >
+                                      Reopen
+                                    </button>
+                                  )}
+                                </span>
+                              ))
+                            : 'Everyone has submitted.'}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </Panel>
+              <Panel
+                title="View by date"
+                action={<span className="subtle">Showing: {rangeText}</span>}
+              >
+                <div className="log-filter">
+                  <label className="field">
+                    From
+                    <input
+                      type="date"
+                      value={logFrom}
+                      max={workDay}
+                      onChange={(e) => applyRange(e.target.value, logTo)}
+                    />
+                  </label>
+                  <label className="field">
+                    To
+                    <input
+                      type="date"
+                      value={logTo}
+                      max={workDay}
+                      onChange={(e) => applyRange(logFrom, e.target.value)}
+                    />
+                  </label>
+                  <button
+                    className="button outline small-button"
+                    onClick={() => applyRange(workDay, workDay)}
+                  >
+                    Today
+                  </button>
+                  <button
+                    className="button outline small-button"
+                    onClick={() => applyRange(dayShift(-1), dayShift(-1))}
+                  >
+                    Yesterday
+                  </button>
+                  <button
+                    className="button outline small-button"
+                    onClick={() => applyRange(dayShift(-6), workDay)}
+                  >
+                    Last 7 days
+                  </button>
+                  <button
+                    className="button outline small-button"
+                    onClick={() => applyRange('', '')}
+                  >
+                    All dates
+                  </button>
+                </div>
+              </Panel>
+              <Panel
+                title="Team timesheets"
+                action={<span className="subtle">Duration is calculated from timestamps</span>}
+              >
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Employee</th>
+                        <th>Task</th>
+                        <th>Work summary</th>
+                        <th>Duration</th>
+                        <th>Self quality</th>
+                        <th>Status</th>
+                        <th>Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!data.logs.length && <Empty />}
-              </div>
-            </Panel>
+                    </thead>
+                    <tbody>
+                      {shownLogs.map((w) => (
+                        <tr key={w.id}>
+                          <td>{text(w, 'work_date') || text(w, 'start_at').slice(0, 10)}</td>
+                          <td>{employeeName(text(w, 'employee_id'))}</td>
+                          <td>
+                            {text(
+                              data.tasks.find((t) => t.id === text(w, 'task_id')) ?? { id: '' },
+                              'title',
+                            )}
+                          </td>
+                          <td>
+                            {text(w, 'description')}
+                            {num(w, 'edit_count') > 0 && <small> (edited)</small>}
+                          </td>
+                          <td>
+                            {(
+                              (Date.parse(text(w, 'end_at')) - Date.parse(text(w, 'start_at'))) /
+                              3600000
+                            ).toFixed(1)}{' '}
+                            h
+                          </td>
+                          <td>
+                            {w.self_quality_rating == null
+                              ? '—'
+                              : `${num(w, 'self_quality_rating')} / 5`}
+                          </td>
+                          <td>
+                            <Badge value={text(w, 'status')} />
+                          </td>
+                          <td>
+                            <button
+                              className="button outline small-button"
+                              onClick={() => open('log-detail', w)}
+                            >
+                              Open
+                              {data.workLogComments.some((c) => text(c, 'work_log_id') === w.id)
+                                ? ` (${data.workLogComments.filter((c) => text(c, 'work_log_id') === w.id).length})`
+                                : ''}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!shownLogs.length && <Empty message="No work logs for this selection" />}
+                </div>
+              </Panel>
+            </>
           )}
           {section === 'attendance' && (
             <>
@@ -2432,7 +2722,7 @@ export function Portal({
                   </div>
                   <div>
                     <dt>Timezone</dt>
-                    <dd>Asia/Colombo</dd>
+                    <dd>{companyTz}</dd>
                   </div>
                   <div>
                     <dt>Currency</dt>
@@ -2440,7 +2730,9 @@ export function Portal({
                   </div>
                   <div>
                     <dt>Working window</dt>
-                    <dd>9:00 AM – 5:00 PM</dd>
+                    <dd>
+                      {time12(workStart)} – {time12(workEnd)}
+                    </dd>
                   </div>
                 </dl>
               </Panel>
@@ -2623,7 +2915,9 @@ export function Portal({
                       invite: 'Invite employee',
                       settings: 'Configure working policy',
                       document: 'Upload private document',
-                      'log-detail': 'Review work log',
+                      'log-detail': 'Work log',
+                      'work-log-edit': 'Edit work log',
+                      'work-log-reopen': 'Reopen work log',
                       'agent-connect': 'Connect a computer',
                       'project-leader': 'Change project leader',
                       'project-delete': 'Delete project',
@@ -3605,7 +3899,14 @@ export function Portal({
           </button>
         </div>
       );
-    if (kind === 'work-log')
+    if (kind === 'work-log') {
+      const assigned = preview
+        ? data.tasks
+        : data.tasks.filter(
+            (t) =>
+              text(t, 'assignee_id') === user.id &&
+              !['completed', 'cancelled'].includes(text(t, 'status')),
+          );
       return (
         <Form
           action="submit_work_log"
@@ -3616,19 +3917,28 @@ export function Portal({
             end_at: new Date(String(p.end_at)).toISOString(),
           })}
         >
+          <p className="info-block">
+            <Clock size={19} />
+            {logWindowOpen
+              ? `Today’s log can be submitted and edited until ${time12(workEnd)}.`
+              : `The work-log window is closed. Logs can be submitted between ${time12(workStart)} and ${time12(workEnd)}.`}
+          </p>
           <label className="field">
             Assigned task
-            <select name="task_id">
-              {mine.map((t) => (
+            <select name="task_id" required>
+              {assigned.map((t) => (
                 <option key={t.id} value={t.id}>
                   {text(t, 'title')}
                 </option>
               ))}
             </select>
           </label>
-          <Field name="start_at" title="Start" type="datetime-local" />
-          <Field name="end_at" title="End" type="datetime-local" />
-          <Field name="description" title="What did you work on?" />
+          <Field name="start_at" title="Start (today)" type="datetime-local" />
+          <Field name="end_at" title="End (today)" type="datetime-local" />
+          <label className="field">
+            Work summary — what did you do today?
+            <textarea name="description" required minLength={3} rows={4} />
+          </label>
           <label className="field">
             How good was today’s work? (your own rating, optional)
             <select name="self_quality_rating" defaultValue="">
@@ -3645,28 +3955,178 @@ export function Portal({
           </p>
         </Form>
       );
-    if (kind === 'log-detail' && row)
+    }
+    if (kind === 'work-log-reopen' && row)
+      return (
+        <Form
+          action="reopen_work_log"
+          row={row}
+          submit="Reopen for 4 hours"
+          transform={(p) => ({ ...p, employee_id: row.id })}
+        >
+          <p className="info-block">
+            <Clock size={19} />
+            {employeeName(row.id)} will be able to submit and edit the work log for the chosen day
+            for the next 4 hours. This is recorded and they are notified.
+          </p>
+          <Field
+            name="work_date"
+            title="Day to reopen"
+            type="date"
+            defaultValue={text(row, 'work_date') || workDay}
+          />
+          <Field name="reason" title="Reason" />
+        </Form>
+      );
+    if (kind === 'work-log-edit' && row)
+      return (
+        <Form
+          action="edit_work_log"
+          row={row}
+          submit="Save changes"
+          transform={(p) => ({
+            ...p,
+            start_at: new Date(String(p.start_at)).toISOString(),
+            end_at: new Date(String(p.end_at)).toISOString(),
+          })}
+        >
+          <p className="info-block">
+            <Clock size={19} />
+            You can keep editing until {time12(workEnd)} today. Saving sends the log back to your
+            project leader as submitted.
+          </p>
+          <Field
+            name="start_at"
+            title="Start (today)"
+            type="datetime-local"
+            defaultValue={toLocalInput(text(row, 'start_at'))}
+          />
+          <Field
+            name="end_at"
+            title="End (today)"
+            type="datetime-local"
+            defaultValue={toLocalInput(text(row, 'end_at'))}
+          />
+          <label className="field">
+            Work summary
+            <textarea
+              name="description"
+              required
+              minLength={3}
+              rows={4}
+              defaultValue={text(row, 'description')}
+            />
+          </label>
+          <label className="field">
+            Your own quality rating (optional)
+            <select
+              name="self_quality_rating"
+              defaultValue={row.self_quality_rating == null ? '' : String(row.self_quality_rating)}
+            >
+              <option value="">Not rated</option>
+              {[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0].map((r) => (
+                <option key={r} value={r}>
+                  {r} / 5
+                </option>
+              ))}
+            </select>
+          </label>
+        </Form>
+      );
+    if (kind === 'log-detail' && row) {
+      const task = data.tasks.find((t) => t.id === text(row, 'task_id'));
+      const own = text(row, 'employee_id') === user.id;
+      const leads = !!task && leadsProject(text(task, 'project_id'));
+      const canReview = !own && leads && text(row, 'status') === 'submitted';
+      const reopened = myReopens.some((r) => text(r, 'work_date') === text(row, 'work_date'));
+      const canEdit = own && (reopened || (text(row, 'work_date') === workDay && logWindowOpen));
+      const canReopen = !own && leads && !logWindowOpen;
+      const comments = data.workLogComments.filter((c) => text(c, 'work_log_id') === row.id);
       return (
         <>
+          <p>
+            <strong>{employeeName(text(row, 'employee_id'))}</strong> · {text(row, 'work_date')} ·{' '}
+            {clock(text(row, 'start_at'))}–{clock(text(row, 'end_at'))}
+          </p>
           <p>{text(row, 'description')}</p>
           <p className="subtle">
             Worker’s own quality rating:{' '}
             {row.self_quality_rating == null
               ? 'not rated'
               : `${num(row, 'self_quality_rating')} / 5`}
+            {num(row, 'edit_count') > 0 && ` · edited ${num(row, 'edit_count')}×`}
           </p>
-          <Form action="review_work_log" row={row} submit="Record decision">
-            <label className="field">
-              Decision
-              <select name="decision">
-                <option value="approved">Approve</option>
-                <option value="rejected">Reject</option>
-              </select>
-            </label>
-            <Field name="reason" title="Review reason" />
-          </Form>
+          {own && !canEdit && (
+            <p className="small-note">
+              This log is locked. Logs can only be edited on the same day, until {time12(workEnd)}.
+            </p>
+          )}
+          {canReopen && (
+            <div className="form-actions">
+              <button
+                className="button outline small-button"
+                onClick={() =>
+                  open('work-log-reopen', {
+                    id: text(row, 'employee_id'),
+                    work_date: text(row, 'work_date'),
+                  })
+                }
+              >
+                Reopen for editing
+              </button>
+            </div>
+          )}
+          {canEdit && (
+            <div className="form-actions">
+              <button
+                className="button outline small-button"
+                onClick={() => open('work-log-edit', row)}
+              >
+                Edit work log
+              </button>
+            </div>
+          )}
+          <h3>Comments</h3>
+          {comments.length ? (
+            <ul className="comment-list">
+              {comments.map((c) => (
+                <li key={c.id}>
+                  <strong>{employeeName(text(c, 'author_id'))}</strong>{' '}
+                  <small>
+                    {new Date(text(c, 'created_at')).toLocaleString('en-GB', {
+                      timeZone: companyTz,
+                    })}
+                  </small>
+                  <p>{text(c, 'body')}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="subtle">No comments yet.</p>
+          )}
+          {(own || leads) && (
+            <Form action="comment_work_log" row={row} submit="Add comment">
+              <label className="field">
+                {own ? 'Reply to your leader' : 'Comment for the employee'}
+                <textarea name="body" required maxLength={2000} rows={3} />
+              </label>
+            </Form>
+          )}
+          {canReview && (
+            <Form action="review_work_log" row={row} submit="Record decision">
+              <label className="field">
+                Decision
+                <select name="decision">
+                  <option value="approved">Approve</option>
+                  <option value="rejected">Reject</option>
+                </select>
+              </label>
+              <Field name="reason" title="Review reason" />
+            </Form>
+          )}
         </>
       );
+    }
     if (kind === 'employee-detail' && row)
       return (
         <>
@@ -3716,9 +4176,7 @@ export function Portal({
             );
             return (
               <>
-                {(preview ||
-                  user.roles.includes('ceo') ||
-                  (user.roles.includes('manager') && leader === user.id)) && (
+                {(preview || user.roles.includes('ceo') || leader === user.id) && (
                   <div className="form-actions">
                     <button
                       className="button outline small-button"
@@ -3916,6 +4374,18 @@ export function Portal({
           <Field
             name="working_weekdays"
             title="Working weekdays (0 Sunday – 6 Saturday, comma-separated)"
+          />
+          <Field
+            name="work_start"
+            title="Work day starts (work logs open)"
+            type="time"
+            defaultValue={workStart}
+          />
+          <Field
+            name="work_end"
+            title="Work day ends (work logs lock)"
+            type="time"
+            defaultValue={workEnd}
           />
           <Field name="break_minutes" title="Break duration in minutes" type="number" />
           <label className="field">

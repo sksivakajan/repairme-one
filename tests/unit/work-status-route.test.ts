@@ -7,17 +7,13 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 import { GET } from '@/app/api/work/status/route';
 beforeEach(() => {
-  identity.mockResolvedValue({ id: 'u1', needsMfa: false });
+  identity.mockResolvedValue({ id: 'u1' });
 });
 afterEach(() => vi.clearAllMocks());
 test('a signed-out request gets nothing', async () => {
   identity.mockResolvedValue(null);
   expect((await GET()).status).toBe(401);
   expect(rpc).not.toHaveBeenCalled();
-});
-test('a user who still owes an authenticator code gets nothing', async () => {
-  identity.mockResolvedValue({ id: 'u1', needsMfa: true });
-  expect((await GET()).status).toBe(401);
 });
 test('the break state of the signed-in employee is returned', async () => {
   rpc.mockResolvedValue({ data: { break_due: true, streak_seconds: 3700 }, error: null });

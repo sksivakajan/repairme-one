@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     );
   const actor = await identity();
-  if (!actor || actor.needsMfa) return new NextResponse(null, { status: 401 });
+  if (!actor) return new NextResponse(null, { status: 401 });
   const length = Number(req.headers.get('content-length') ?? 0);
   if (length > 5300000)
     return NextResponse.json({ error: 'Maximum file size is 5 MB.' }, { status: 413 });
