@@ -138,6 +138,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
       ).limit(t === 'attendance' ? 300 : 100);
       return {
         ...result,
+        table: t,
         data: result.data?.map((r) => ({
           ...r,
           id:
@@ -183,11 +184,17 @@ export default async function Page({ params }: { params: Promise<{ section: stri
     sprints,
     releases,
   ];
-  if (results.some((r) => r.error))
+  // Tables added by the newest migrations are optional, so the portal still opens before they are applied.
+  const optional = ['attendance_devices', 'agent_devices', 'agent_status'];
+  const failed = results.filter((r) => r.error && !optional.includes(r.table));
+  if (failed.length)
     return (
       <div className="setup-page">
         <h1>Workspace could not be loaded</h1>
-        <p>Check the database migration and your access permissions, then reload.</p>
+        <p>
+          Check the database migration and your access permissions, then reload. Could not read:{' '}
+          {failed.map((r) => r.table).join(', ')}.
+        </p>
         <a href={`/${section}`}>Try again</a>
       </div>
     );
