@@ -1,0 +1,11 @@
+node_modules
+.next
+.local-postgres
+.local-postgres.log
+backups
+docs/qa
+supabase/install.sql
+src/lib/supabase/database.types.ts
+package-lock.json
+test-results
+playwright-report

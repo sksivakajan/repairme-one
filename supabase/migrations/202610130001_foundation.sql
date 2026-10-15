@@ -1,0 +1,45 @@
+begin;
+create extension if not exists pgcrypto;
+create extension if not exists btree_gist;
+create type public.app_role as enum ('ceo','admin','hr','finance','manager','employee');
+create table public.employees(id uuid primary key references auth.users(id), employee_number text unique not null, first_name text not null, last_name text not null, work_email text unique not null, department text not null default '', job_title text not null default '', manager_id uuid references public.employees(id), employment_type text not null default 'full_time', joining_date date not null default current_date, status text not null default 'invited' check(status in ('invited','onboarding','active','suspended','offboarded')), skills text[] not null default '{}', version integer not null default 1, created_at timestamptz not null default now());
+create table public.user_roles(user_id uuid references public.employees(id),role public.app_role not null,primary key(user_id,role));
+create table public.employee_private(employee_id uuid primary key references public.employees(id),contact jsonb not null default '{}',emergency_contact jsonb not null default '{}');
+create table public.company_settings(id boolean primary key default true check(id),name text not null default 'RepairMe',timezone text not null default 'Asia/Colombo',currency text not null default 'LKR',work_start time not null default '09:00',work_end time not null default '17:00',working_weekdays integer[] not null default '{}',break_minutes integer check(break_minutes between 0 and 240),break_paid boolean,leave_policy jsonb not null default '{"monthly_accrual":1,"proration":"unconfigured","carry_forward":"unconfigured"}',version integer not null default 1);
+insert into public.company_settings(id) values(true);
+create table public.holidays(id uuid primary key default gen_random_uuid(),day date unique not null,name text not null);
+create table public.audit_events(id uuid primary key default gen_random_uuid(),actor_id uuid references public.employees(id),event text not null,entity_id uuid,details jsonb not null default '{}',created_at timestamptz not null default now());
+create table public.notifications(id uuid primary key default gen_random_uuid(),user_id uuid not null references public.employees(id),title text not null,href text not null,dedupe_key text unique not null,read_at timestamptz,created_at timestamptz not null default now());
+create function public.active_user() returns boolean language sql stable security definer set search_path='' as $$ select exists(select 1 from public.employees where id=auth.uid() and status in ('active','onboarding')); $$;
+create function public.has_role(wanted public.app_role[]) returns boolean language sql stable security definer set search_path='' as $$ select public.active_user() and exists(select 1 from public.user_roles where user_id=auth.uid() and role=any(wanted)) and (not exists(select 1 from public.user_roles where user_id=auth.uid() and role in ('ceo','admin','hr','finance','manager')) or coalesce(auth.jwt()->>'aal','')='aal2'); $$;
+create function public.is_manager(employee uuid) returns boolean language sql stable security definer set search_path='' as $$ select public.has_role(array['manager']::public.app_role[]) and exists(select 1 from public.employees where id=employee and manager_id=auth.uid()); $$;
+create function public.audit(event_name text,entity uuid,info jsonb default '{}') returns void language sql security definer set search_path='' as $$ insert into public.audit_events(actor_id,event,entity_id,details) values(auth.uid(),event_name,entity,info); $$;
+create function public.protect_last_ceo() returns trigger language plpgsql security definer set search_path='' as $$ begin
+ perform pg_advisory_xact_lock(771001);
+ if TG_TABLE_NAME='user_roles' then
+ if old.role='ceo' and not exists(select 1 from public.user_roles r join public.employees e on e.id=r.user_id where r.role='ceo' and e.status='active' and r.user_id<>old.user_id) then raise exception 'Cannot remove last active owner'; end if;
+ else
+ if old.status='active' and new.status<>'active' and exists(select 1 from public.user_roles where user_id=old.id and role='ceo') and not exists(select 1 from public.user_roles r join public.employees e on e.id=r.user_id where r.role='ceo' and e.status='active' and e.id<>old.id) then raise exception 'Cannot disable last active owner'; end if;
+ end if; return coalesce(new,old); end $$;
+create trigger last_owner_role before delete or update on public.user_roles for each row execute function public.protect_last_ceo();
+create trigger last_owner_status before update on public.employees for each row execute function public.protect_last_ceo();
+alter table public.employees enable row level security;
+alter table public.user_roles enable row level security;
+alter table public.employee_private enable row level security;
+alter table public.company_settings enable row level security;
+alter table public.holidays enable row level security;
+alter table public.audit_events enable row level security;
+alter table public.notifications enable row level security;
+create policy directory_read on public.employees for select to authenticated using(public.active_user());
+create policy own_roles on public.user_roles for select to authenticated using(public.active_user() and (user_id=auth.uid() or public.has_role(array['admin','ceo']::public.app_role[])));
+create policy private_hr_read on public.employee_private for select to authenticated using(public.active_user() and (employee_id=auth.uid() or public.has_role(array['hr','ceo']::public.app_role[])));
+create policy settings_read on public.company_settings for select to authenticated using(public.active_user());
+create policy holidays_read on public.holidays for select to authenticated using(public.active_user());
+create policy audit_read on public.audit_events for select to authenticated using(public.has_role(array['ceo','admin']::public.app_role[]));
+create policy notifications_read on public.notifications for select to authenticated using(public.active_user() and user_id=auth.uid());
+revoke all on all tables in schema public from anon,authenticated;
+grant select on public.employees,public.user_roles,public.employee_private,public.company_settings,public.holidays,public.audit_events,public.notifications to authenticated;
+revoke execute on function public.audit(text,uuid,jsonb), public.protect_last_ceo() from public,anon,authenticated;
+revoke execute on function public.active_user(),public.has_role(public.app_role[]),public.is_manager(uuid) from public,anon;
+grant execute on function public.active_user(),public.has_role(public.app_role[]),public.is_manager(uuid) to authenticated;
+commit;

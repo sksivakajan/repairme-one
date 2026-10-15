@@ -1,0 +1,9 @@
+[build]
+command = "npm run build -- --webpack"
+publish = ".next"
+[build.environment]
+NODE_VERSION = "24"
+ENABLE_FIXTURE_PREVIEW = "false"
+
+[[plugins]]
+package = "@netlify/plugin-nextjs"

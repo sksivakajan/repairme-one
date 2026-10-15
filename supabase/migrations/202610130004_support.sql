@@ -1,0 +1,18 @@
+begin;
+create table public.candidates(id uuid primary key default gen_random_uuid(),name text not null,email text not null,position text not null,stage text not null default 'applied',job_related_evidence text not null default '',created_at timestamptz not null default now());
+create table public.sprints(id uuid primary key default gen_random_uuid(),project_id uuid references public.projects(id),name text not null,start_date date,end_date date,state text not null default 'planned');
+create table public.task_developer_details(task_id uuid primary key references public.tasks(id),sprint_id uuid references public.sprints(id),severity text,reproduction_steps text,repository_url text,pull_request_url text);
+create table public.releases(id uuid primary key default gen_random_uuid(),project_id uuid references public.projects(id),name text not null,state text not null default 'draft',checklist jsonb not null default '[]',deployment_history jsonb not null default '[]');
+create table public.documents(id uuid primary key default gen_random_uuid(),owner_id uuid not null references public.employees(id),project_id uuid references public.projects(id),name text not null,path text unique not null,classification text not null check(classification in ('own','project','hr','finance')),mime_type text not null,size_bytes bigint not null check(size_bytes between 1 and 5242880),created_at timestamptz not null default now());
+do $$ declare t text;begin foreach t in array array['candidates','sprints','task_developer_details','releases','documents'] loop execute format('alter table public.%I enable row level security',t);execute format('grant select on public.%I to authenticated',t);end loop;end $$;
+create policy recruitment_read on public.candidates for select to authenticated using(public.has_role(array['ceo','hr']::public.app_role[]));
+create policy sprint_read on public.sprints for select to authenticated using(public.project_access(project_id));
+create policy developer_details_read on public.task_developer_details for select to authenticated using(exists(select 1 from public.tasks where id=task_id));
+create policy release_read on public.releases for select to authenticated using(public.project_access(project_id));
+create function public.document_access(document uuid) returns boolean language sql stable security definer set search_path='' as $$ select public.active_user() and exists(select 1 from public.documents d where d.id=document and ((d.classification='own' and d.owner_id=auth.uid()) or(d.classification='project' and public.project_access(d.project_id)) or(d.classification='hr' and public.has_role(array['ceo','hr']::public.app_role[])) or(d.classification='finance' and public.has_role(array['ceo','finance']::public.app_role[])))); $$;
+create policy document_read on public.documents for select to authenticated using(public.document_access(id));
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('private-documents','private-documents',false,5242880,array['application/pdf','image/jpeg','image/png','text/plain']) on conflict(id) do nothing;
+create policy private_file_read on storage.objects for select to authenticated using(bucket_id='private-documents' and exists(select 1 from public.documents d where d.path=name and public.document_access(d.id)));
+revoke execute on function public.document_access(uuid) from public,anon;
+grant execute on function public.document_access(uuid) to authenticated;
+commit;

@@ -1,0 +1,10 @@
+-- Run only after creating/inviting the FIRST real owner via Supabase Auth Dashboard.
+-- Repair Me has owner permissions; department and job title are intentionally blank.
+begin;
+insert into public.employees(id,employee_number,first_name,last_name,work_email,department,job_title,status)
+select id,'RM-OWNER','Repair','Me',email,'','','active'
+from auth.users where id='3862dd9f-de31-4c57-a6fb-045a746b456e'::uuid;
+insert into public.user_roles(user_id,role) select id,'ceo' from public.employees where id='3862dd9f-de31-4c57-a6fb-045a746b456e'::uuid;
+insert into public.user_roles(user_id,role) select id,'employee' from public.employees where id='3862dd9f-de31-4c57-a6fb-045a746b456e'::uuid;
+insert into public.audit_events(actor_id,event,entity_id) values(null,'first_owner_bootstrapped','3862dd9f-de31-4c57-a6fb-045a746b456e'::uuid);
+commit;

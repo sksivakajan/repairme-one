@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.env*
+!.env.example
+playwright-report/
+test-results/
+test-results-verification/
+*.log
+coverage/
+*.tsbuildinfo
+backups/
+.local-postgres/
+.local-postgres.log
+releases/
+
+# Local Netlify folder
+.netlify

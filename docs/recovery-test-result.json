@@ -1,0 +1,10 @@
+{
+  "scope": "Local PostgreSQL schema and fictional file; hosted Supabase Auth and Storage not verified",
+  "sourceDatabase": "postgres",
+  "restoredDatabase": "repairme_restore_1791838159168",
+  "tables": 42,
+  "databaseMarker": "verified",
+  "fileSha256": "5adfadbb366cf5915ff331e7d2e6aaa4c202c61c0ce5c65373847e98db151787",
+  "fileDigest": "matched",
+  "testedAt": "2026-10-12T20:49:21.046Z"
+}

@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-13",
+  "origin": "https://extraordinary-semolina-40421d.netlify.app",
+  "deploy_id": "6acd5f950cab335fb76faeb3",
+  "state": "ready",
+  "build": "Netlify Linux source ZIP build with explicit Next.js adapter",
+  "checks": {
+    "login_http": 200,
+    "logo_http": 200,
+    "preview_http": 404,
+    "unauthenticated_command_http": 401,
+    "dashboard_browser_redirect": "/login",
+    "browser_errors": []
+  },
+  "remaining": [
+    "Supabase hosted Site URL and callback configuration confirmation",
+    "real user login, password recovery, MFA and role acceptance tests"
+  ],
+  "netlify_team_gate": "disabled with explicit user approval"
+}
