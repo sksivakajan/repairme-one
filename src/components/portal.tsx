@@ -3869,20 +3869,38 @@ export function Portal({
           </p>
         </Form>
       );
-    if (kind === 'project-delete' && row)
+    if (kind === 'project-delete' && row) {
+      const projectTasks = data.tasks.filter((t) => text(t, 'project_id') === row.id);
+      const hasRecords =
+        projectTasks.some((t) => text(t, 'status') === 'completed') ||
+        data.logs.some(
+          (l) =>
+            projectTasks.some((t) => t.id === text(l, 'task_id')) &&
+            ['submitted', 'approved'].includes(text(l, 'status')),
+        );
+      const isCeo = preview || user.roles.includes('ceo');
       return (
         <Form action="delete_project" row={row} submit="Delete project">
           <p>
             Delete <strong>{text(row, 'name')}</strong>? The project and its tasks disappear from
             every list. Open tasks are cancelled. Everything stays in the history and audit trail.
           </p>
+          {hasRecords && (
+            <p className="small-note">
+              This project has completed tasks or work logs. They stay in the records, so reviews
+              and hours do not change, but the project is hidden.{' '}
+              {isCeo
+                ? 'To confirm, type the project name below.'
+                : 'Only the CEO can delete a project that has work records.'}
+            </p>
+          )}
           <Field name="reason" title="Why is it being deleted?" />
-          <p className="small-note">
-            A project with completed tasks or submitted work logs cannot be deleted, because that
-            work is part of the record.
-          </p>
+          {hasRecords && isCeo && (
+            <Field name="confirm_name" title={`Type “${text(row, 'name')}” to confirm`} />
+          )}
         </Form>
       );
+    }
     if (kind === 'settings')
       return (
         <Form

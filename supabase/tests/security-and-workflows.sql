@@ -380,5 +380,21 @@ select test.assert((select count(*)=0 from public.projects where name='To delete
 reset role;
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000004',true);
 select set_config('request.jwt.claims','{"aal":"aal2","session_id":"aaaaaaaa-0000-0000-0000-000000000006"}',true);
-select test.reject($$select public.command('delete_project',(select id from public.projects where name='Test project'),(select version from public.projects where name='Test project'),'{"reason":"Cleaning up"}')$$,'cannot be deleted','A project with completed work or submitted work logs cannot be deleted');
+select test.reject($$select public.command('delete_project',(select id from public.projects where name='Test project'),(select version from public.projects where name='Test project'),'{"reason":"Cleaning up"}')$$,'Only the CEO can delete it','A project leader cannot delete a project that has work records');
+-- The CEO can delete a project that has work records, after typing its name; the records stay.
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
+select set_config('request.jwt.claims','{"aal":"aal2"}',true);
+select test.reject($$select public.command('delete_project',(select id from public.projects where name='Test project'),(select version from public.projects where name='Test project'),'{"reason":"Old test project"}')$$,'Type the project name','Deleting a project with work records needs the name typed');
+select test.reject($$select public.command('delete_project',(select id from public.projects where name='Test project'),(select version from public.projects where name='Test project'),'{"reason":"Old test project","confirm_name":"Another project"}')$$,'Type the project name','A wrong name is refused');
+create temp table t_logs as select count(*) as n from public.work_logs;
+create temp table t_done as select count(*) as n from public.tasks where status='completed' and project_id=(select id from public.projects where name='Test project');
+select public.command('delete_project',(select id from public.projects where name='Test project'),(select version from public.projects where name='Test project'),'{"reason":"Old test project","confirm_name":"test PROJECT"}');
+select test.assert((select deleted_at is not null from public.projects where name='Test project'),'The CEO deleted the project that had work records');
+select test.assert((select count(*)=(select n from t_logs) from public.work_logs),'No work log was removed');
+select test.assert((select count(*)=(select n from t_done) from public.tasks where status='completed' and project_id=(select id from public.projects where name='Test project')),'Completed tasks stay completed');
+select test.assert((select count(*)=0 from public.tasks where project_id=(select id from public.projects where name='Test project') and status not in ('completed','cancelled')),'Open tasks of the project are cancelled');
+select test.assert(exists(select 1 from public.audit_events where event='project_deleted' and details->>'had_work_records'='true'),'The deletion is audited with the fact that it had records');
+set local role authenticated;
+select test.assert((select count(*)=0 from public.projects where name='Test project'),'The deleted project is hidden from the CEO too');
+reset role;
 rollback;

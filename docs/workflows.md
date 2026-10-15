@@ -83,4 +83,4 @@ All multi-record commands execute within one PostgreSQL transaction; row/advisor
 ## Changing a project's leader, and deleting a project
 
 - The CEO or the project's current leader can change the leader of any existing project (Projects → open a project → Change leader). The new leader must be an active manager. The new leader is notified, creates the project's tasks and sees every task. The previous leader keeps only tasks assigned to them.
-- The CEO or the leader can delete a project with a reason. The project and its tasks disappear from every list and open tasks are cancelled with a history entry; everything stays in the database and audit trail. A project with completed tasks or submitted work logs cannot be deleted.
+- The CEO or the leader can delete a project with a reason. The project and its tasks disappear from every list and open tasks are cancelled with a history entry; everything stays in the database and audit trail. A project with completed tasks or work logs can only be deleted by the CEO, after typing the project name; the work records are kept.

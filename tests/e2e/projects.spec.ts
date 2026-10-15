@@ -20,7 +20,9 @@ test('deleting a project asks for a reason and explains what happens', async ({ 
   const dialog = page.getByRole('dialog', { name: 'Delete project' });
   await expect(dialog.getByText('Open tasks are cancelled')).toBeVisible();
   await expect(dialog.getByLabel('Why is it being deleted?')).toBeVisible();
-  await expect(dialog.getByText(/cannot be deleted/)).toBeVisible();
+  // This project has a completed task, so the CEO must also type its name.
+  await expect(dialog.getByText(/This project has completed tasks or work logs/)).toBeVisible();
+  await expect(dialog.getByLabel(/to confirm/)).toBeVisible();
 });
 test('creating a project requires choosing a leader', async ({ page }) => {
   await page.goto('/preview/projects');
